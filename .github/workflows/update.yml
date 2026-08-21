@@ -1,0 +1,33 @@
+name: Auto Refresh VOD Streams
+
+on:
+  schedule:
+    # Berjalan otomatis setiap 2 jam agar token .m3u8 tidak kedaluwarsa/403
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Streamlink
+        run: pip install streamlink
+
+      - name: Run Streamlink Python Extractor
+        run: python generate.py
+
+      - name: Push Updated Playlist to GitHub
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add playlist.m3u
+          git commit -m "Auto refresh M3U8 tokens [skip ci]" || exit 0
+          git push
