@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Status](https://img.shields.io/badge/VOD%20Movies-Active-blue)](#-key-features)
 
-An automated M3U playlist generator for Indonesian Movie VODs. Designed for seamless playback and automatically updated to ensure valid stream tokens across major IPTV players.
+An automated M3U playlist generator for Movies & Video On Demand (VOD). Designed for seamless playback and automatically updated to ensure valid stream tokens across major IPTV players.
 
 ---
 
@@ -25,6 +25,7 @@ Import this link directly into your preferred IPTV player (TiviMate, OTT Navigat
 ## ✨ Key Features
 
 - **Auto-Updated Stream Tokens:** Automated background updates via GitHub Actions to prevent expired links (403 errors).
+- **Multi-Category Support:** Continuously updated with a variety of movies and VOD content from various sources.
 - **VOD Categorization:** Includes metadata tags for seamless movie categorization in IPTV players.
 - **Universal Compatibility:** Standardized M3U format compatible with all major IPTV applications.
 
