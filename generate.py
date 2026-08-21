@@ -1,11 +1,13 @@
 import streamlink
 
 vod_items = [
-    {"title": "Mohon Doa Restu (2023)", "id": "x9qtlim", "logo": "https://upload.wikimedia.org/wikipedia/id/thumb/c/c6/Poster_MDR.jpg/220px-Poster_MDR.jpg"},
-    {"title": "Laura (2024)", "id": "x9f73iq", "logo": "https://media.themoviedb.org/t/p/w500/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
-    {"title": "7 Hari Untuk Keshia (2025)", "id": "x9d736m", "logo": "https://posters.cdn.klikfilm.net/380_543/7_hari_untuk_keshia_600_857.jpg"},
-    {"title": "Lovely Man (2011)", "id": "x917hi4", "logo": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRUBXR9-yD1E0adBmO8IOz4LApUYVhPMTmPjw&s"},
-    {"title": "Rumah Dinas Bapak (2024)", "id": "x9icyxk", "logo": "https://www.bantennow.com/assets/2024/07/Rumah-Dinas-Bapak-2024.webp"}
+    {"title": "Mohon Doa Restu", "id": "x9qtlim", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
+    {"title": "Laura", "id": "x9f73iq", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
+    {"title": "Tujuh Hari Untuk Keshia", "id": "x9d736m", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
+    {"title": "Lovely Man", "id": "x917hi4", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
+    {"title": "Father's Haunted House", "id": "x9icyxk", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
+    {"title": "Merindu Cahaya De Amstel", "id": "x9a27nu", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
+    {"title": "Pasutri Gaje", "id": "x9kg0yi", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
 def main():
@@ -20,9 +22,8 @@ def main():
         try:
             streams = session.streams(f"https://www.dailymotion.com/video/{item['id']}")
             if "best" in streams:
-                # Menggunakan URL stream .m3u8 hasil ekstraksi Python Streamlink
                 url = streams['best'].url
-                m3u.append(f'#EXTINF:-1 tvg-logo="{item["logo"]}" group-title="Indonesian Movies",{item["title"]}')
+                m3u.append(f'#EXTINF:-1 content-type="movie" tvg-logo="{item["logo"]}" group-title="Movies (VOD)",{item["title"]}')
                 m3u.append(url)
                 print(f"[SUCCESS] {item['title']}")
         except Exception as e:
