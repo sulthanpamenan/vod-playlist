@@ -24,7 +24,7 @@ Import this link directly into your preferred IPTV player (TiviMate, OTT Navigat
 
 ## ✨ Key Features
 
-- **Auto-Updated Stream Tokens:** Automated background updates via GitHub Actions to prevent expired links (403 errors).
+- **Auto-Updated Stream Tokens:** Automated background updates via GitHub Actions to prevent expired links.
 - **Multi-Category Support:** Continuously updated with a variety of movies and VOD content from various sources.
 - **VOD Categorization:** Includes metadata tags for seamless movie categorization in IPTV players.
 - **Universal Compatibility:** Standardized M3U format compatible with all major IPTV applications.
