@@ -17,7 +17,7 @@ Import this link directly into your preferred IPTV player (TiviMate, OTT Navigat
 | :--- | :--- | :--- |
 | **Playlist (M3U)** | `https://sulthanpamenan.github.io/vod-playlist/playlist.m3u` | Auto-updated M3U playlist with valid stream links |
 
-*(Alternatif URL Raw jika tidak menggunakan GitHub Pages):*
+*(Alternative Raw URL if not using GitHub Pages):*
 `https://raw.githubusercontent.com/sulthanpamenan/vod-playlist/main/playlist.m3u`
 
 ---
