@@ -1,13 +1,13 @@
 import streamlink
 
 vod_items = [
-    {"title": "Mohon Doa Restu", "id": "x9qtlim", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
-    {"title": "Laura", "id": "x9f73iq", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
-    {"title": "Tujuh Hari Untuk Keshia", "id": "x9d736m", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
-    {"title": "Lovely Man", "id": "x917hi4", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
-    {"title": "Father's Haunted House", "id": "x9icyxk", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
-    {"title": "Merindu Cahaya De Amstel", "id": "x9a27nu", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
-    {"title": "Pasutri Gaje", "id": "x9kg0yi", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
+    {"title": "Mohon Doa Restu", "id": "x9qtlim", "genres": "Comedy", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
+    {"title": "Laura", "id": "x9f73iq", "genres": "Drama", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
+    {"title": "Tujuh Hari Untuk Keshia", "id": "x9d736m", "genres": "Drama", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
+    {"title": "Lovely Man", "id": "x917hi4", "genres": "Drama", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
+    {"title": "Father's Haunted House", "id": "x9icyxk", "genres": "Comedy", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
+    {"title": "Merindu Cahaya De Amstel", "id": "x9a27nu", "genres": "Romance", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
+    {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy, Romance, Drama", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
 def main():
@@ -23,7 +23,7 @@ def main():
             streams = session.streams(f"https://www.dailymotion.com/video/{item['id']}")
             if "best" in streams:
                 url = streams['best'].url
-                m3u.append(f'#EXTINF:-1 content-type="movie" tvg-logo="{item["logo"]}" group-title="Movies (VOD)",{item["title"]}')
+                m3u.append(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="{item["logo"]}" group-title="{item["genres"]}",{item["title"]}')
                 m3u.append(url)
                 print(f"[SUCCESS] {item['title']}")
         except Exception as e:
