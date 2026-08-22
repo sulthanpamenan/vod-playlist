@@ -7,7 +7,7 @@ vod_items = [
     {"title": "Lovely Man", "id": "x917hi4", "genres": "Drama", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
     {"title": "Father's Haunted House", "id": "x9icyxk", "genres": "Comedy", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
     {"title": "Merindu Cahaya De Amstel", "id": "x9a27nu", "genres": "Romance", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
-    {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy, Romance, Drama", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
+    {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
 def main():
