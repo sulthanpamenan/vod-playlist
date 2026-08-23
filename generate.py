@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 # =========================================================================
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Referer": "https://qazaqstan.tv/"
 }
 WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
@@ -56,20 +57,31 @@ def process_dailymotion_item(item):
     return None
 
 # =========================================================================
-# QAZAQSTAN EXTRACTOR VIA PLAYER API
+# QAZAQSTAN EXTRACTOR
 # =========================================================================
-def get_qazaqstan_direct_stream(video_id):
-    """Menembak Player API Qazaqstan untuk mengambil URL .mp4/.m3u8 asli"""
+def extract_qazaqstan_stream(video_page_url):
+    """Mengekstrak URL .mp4 / .m3u8 dari dalam tag script/JSON di halaman detail"""
     try:
-        # Coba panggil player embed internal
-        embed_url = f"https://qazaqstan.tv/player/{video_id}"
-        res = HTTP_SESSION.get(embed_url, timeout=8)
+        res = HTTP_SESSION.get(video_page_url, timeout=10)
         if res.status_code == 200:
-            match = re.search(r'(https?://[^\s\'"]+\.(?:mp4|m3u8)[^\s\'"]*)', res.text, re.I)
+            html = res.text
+            # Match 1: Ekstrak URL mp4/m3u8 langsung
+            match = re.search(r'(https?://[^\s\'"]+\.(?:mp4|m3u8)[^\s\'"]*)', html, re.I)
             if match:
                 return match.group(1).replace('\\', '')
-    except Exception:
-        pass
+
+            # Match 2: Cari URL iframe tersembunyi
+            iframe_match = re.search(r'<iframe[^>]+src=["\']([^"\']+)["\']', html, re.I)
+            if iframe_match:
+                iframe_url = iframe_match.group(1)
+                if iframe_url.startswith('//'):
+                    iframe_url = 'https:' + iframe_url
+                res_iframe = HTTP_SESSION.get(iframe_url, timeout=10)
+                match_iframe = re.search(r'(https?://[^\s\'"]+\.(?:mp4|m3u8)[^\s\'"]*)', res_iframe.text, re.I)
+                if match_iframe:
+                    return match_iframe.group(1).replace('\\', '')
+    except Exception as e:
+        print(f"[EXTRACT FAILED] {video_page_url}: {e}")
     return None
 
 def fetch_single_qazaqstan_cat(category):
@@ -87,11 +99,9 @@ def fetch_single_qazaqstan_cat(category):
 
             for a_tag in soup.find_all('a', href=True):
                 href = a_tag['href']
-                
                 if '/videos/' not in href:
                     continue
 
-                # Ambil ID video unik dari URL (misal: 221009)
                 video_id_match = re.search(r'/videos/(\d+)', href)
                 if not video_id_match:
                     continue
@@ -101,10 +111,16 @@ def fetch_single_qazaqstan_cat(category):
                     continue
                 visited_ids.add(video_id)
 
-                # Dapatkan URL berkas video langsung dari API
-                direct_media_url = get_qazaqstan_direct_stream(video_id)
+                full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
+
+                # Dapatkan URL media langsung
+                direct_media_url = extract_qazaqstan_stream(full_page_url)
+                
+                # JIKA EXTRACTOR GAGAL: Tetap masukkan URL halaman, tetapi dibungkus Proxy
                 if not direct_media_url:
-                    continue
+                    stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
+                else:
+                    stream_url = f"{WORKER_PROXY}{quote(direct_media_url, safe='')}"
 
                 title = a_tag.get_text(strip=True)
                 if not title or title.lower() in ['онлайн көру', 'толығырақ', '']:
@@ -126,13 +142,11 @@ def fetch_single_qazaqstan_cat(category):
                 if not logo:
                     logo = "https://qazaqstan.tv/assets/images/logo.png"
 
-                # Bungkus direct media URL dengan Worker Proxy
-                stream_url = f"{WORKER_PROXY}{quote(direct_media_url, safe='')}"
                 meta = f'#EXTINF:-1 vod="1" type="{def_type}" content-type="{def_type}" tvg-logo="{logo}" group-title="{def_genre}",{clean_title}'
                 
                 entries.append(meta)
                 entries.append(stream_url)
-                print(f"[SUCCESS] {clean_title} -> Direct Video Added")
+                print(f"[SUCCESS QZ] {clean_title}")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
@@ -157,12 +171,14 @@ def generate_vod_playlist():
         "", "#EXTM3U", ""
     ]
 
+    print("\n--- Processing Dailymotion VOD ---")
     with ThreadPoolExecutor(max_workers=4) as executor:
         for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
             if res:
                 m3u.append(res[0])
                 m3u.append(res[1])
 
+    print("\n--- Processing Qazaqstan VOD ---")
     with ThreadPoolExecutor(max_workers=3) as executor:
         for res_list in executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES):
             m3u.extend(res_list)
@@ -170,7 +186,7 @@ def generate_vod_playlist():
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print("[SUCCESS] Playlist updated successfully with direct stream links!")
+    print("\n[SUCCESS] `playlist.m3u` updated successfully!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
