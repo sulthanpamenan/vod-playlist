@@ -83,38 +83,40 @@ def fetch_single_qazaqstan_cat(category):
         res = HTTP_SESSION.get(proxied_url, timeout=12)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
-            # Memindai seluruh link di halaman kategori
-            links = soup.find_all('a', href=True)
-
+            
+            # AMBIL SELURUH TAG <a> TANPA MENGASUMSIKAN CLASS
             visited_links = set()
-            for a in links:
-                href = a['href']
-                if not href or href in visited_links or href in ["#", "/serials", "/projects", "/documentaries"]: 
+            for a_tag in soup.find_all('a', href=True):
+                href = a_tag['href']
+                
+                # Filter hanya URL yang mengarah ke tayangan spesifik
+                if not any(k in href for k in ['/videos/', '/projects/', '/serials/', '/episode/']):
                     continue
-
-                if not any(k in href for k in ['/videos/', '/projects/', '/serials/', '/episode/']): 
+                if href in visited_links or href in ["/serials", "/projects", "/documentaries", "#"]:
                     continue
 
                 full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
                 visited_links.add(href)
 
-                # Ambil Judul
-                title = a.get_text(strip=True)
+                # Ambil Judul dari Teks Tag <a> atau dari Slug URL
+                title = a_tag.get_text(strip=True)
                 if not title or len(title) < 3:
                     slug = href.rstrip('/').split('/')[-1]
                     title = slug.replace('-', ' ').title()
 
                 clean_title = re.sub(r'\s+', ' ', title).strip()
 
-                # Ambil Poster/Logo
-                img_elem = a.find('img')
+                # Ambil Gambar Poster jika tersedia
+                img_elem = a_tag.find('img')
                 logo = img_elem.get('src', '') if img_elem else ""
                 if logo and not logo.startswith('http'):
                     logo = urljoin("https://qazaqstan.tv", logo)
+                if not logo:
+                    logo = "https://qazaqstan.tv/assets/images/logo.png"
 
                 genre, c_type = detect_meta(clean_title, href, def_genre, def_type)
 
-                # Masukkan URL halaman VOD yang dibungkus Worker Proxy
+                # Bungkus dengan Worker Proxy
                 stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
                 meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{clean_title}'
                 
@@ -126,14 +128,6 @@ def fetch_single_qazaqstan_cat(category):
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
 
     return entries
-
-def fetch_all_qazaqstan():
-    m3u_entries = []
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES)
-    for res_list in results:
-        m3u_entries.extend(res_list)
-    return m3u_entries
 
 def generate_vod_playlist():
     print("[*] Starting VOD Playlist Generation...")
@@ -158,14 +152,14 @@ def generate_vod_playlist():
                 m3u.append(res[1])
 
     print("\n--- Processing Qazaqstan VOD ---")
-    qz_entries = fetch_all_qazaqstan()
-    m3u.extend(qz_entries)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        for res_list in executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES):
+            m3u.extend(res_list)
 
-    output_filename = "playlist.m3u"
-    with open(output_filename, "w", encoding="utf-8") as f:
+    with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print(f"\n[SUCCESS] Combined VOD `{output_filename}` updated successfully!")
+    print(f"\n[SUCCESS] Combined VOD `playlist.m3u` updated successfully!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
