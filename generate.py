@@ -13,26 +13,45 @@ HEADERS = {
 }
 WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
 
-# 1. DAILYMOTION VOD ITEMS
 DAILYMOTION_ITEMS = [
-    {"title": "Mohon Doa Restu", "id": "x9qtlim", "genres": "Comedy", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
-    {"title": "Laura", "id": "x9f73iq", "genres": "Drama", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
-    {"title": "Tujuh Hari Untuk Keshia", "id": "x9d736m", "genres": "Drama", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
-    {"title": "Lovely Man", "id": "x917hi4", "genres": "Drama", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
-    {"title": "Father's Haunted House", "id": "x9icyxk", "genres": "Comedy", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
-    {"title": "Merindu Cahaya De Amstel", "id": "x9a27nu", "genres": "Romance", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
-    {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
+    {"title": "Mohon Doa Restu", "id": "x9qtlim", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
+    {"title": "Laura", "id": "x9f73iq", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
+    {"title": "Tujuh Hari Untuk Keshia", "id": "x9d736m", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
+    {"title": "Lovely Man", "id": "x917hi4", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
+    {"title": "Father's Haunted House", "id": "x9icyxk", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
+    {"title": "Merindu Cahaya De Amstel", "id": "x9a27nu", "genres": "Romance", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
+    {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
-# 2. QAZAQSTAN VOD TARGET CATEGORIES
 QAZAQSTAN_CATEGORIES = [
-    {"group": "Qazaqstan Serials", "url": "https://qazaqstan.tv/serials"},
-    {"group": "Qazaqstan Shows", "url": "https://qazaqstan.tv/projects"},
-    {"group": "Qazaqstan Documentaries", "url": "https://qazaqstan.tv/documentaries"}
+    {"group": "Qazaqstan Serials", "url": "https://qazaqstan.tv/serials", "default_genre": "Drama", "default_type": "series"},
+    {"group": "Qazaqstan Shows", "url": "https://qazaqstan.tv/projects", "default_genre": "Entertainment", "default_type": "series"},
+    {"group": "Qazaqstan Documentaries", "url": "https://qazaqstan.tv/documentaries", "default_genre": "Documentary", "default_type": "movie"}
 ]
 
 HTTP_SESSION = requests.Session()
 HTTP_SESSION.headers.update(HEADERS)
+
+# =========================================================================
+# DETEKSI GENRE & CONTENT-TYPE OTOMATIS
+# =========================================================================
+GENRE_PATTERNS = [
+    (re.compile(r'balapan|мульт|балалар|детский|animation|kids|anime', re.I), "Kids", "anime"),
+    (re.compile(r'serial|телехикая|сериал|series|episode', re.I), "Drama", "series"),
+    (re.compile(r'фильм|кино|драма|movie|cinema', re.I), "Drama", "movie"),
+    (re.compile(r'show|шоу|жоба|проекты|проектами|бағдарлама|tv show|entertainment', re.I), "Entertainment", "series"),
+    (re.compile(r'doc|дерек|документальный|история|тарих|documentary', re.I), "Documentary", "movie"),
+    (re.compile(r'news|жаңалық|спорт|sport|хабар|ақпарат|новости', re.I), "News & Sports", "movie"),
+    (re.compile(r'comed|комед|әзіл|юмор', re.I), "Comedy", "movie"),
+    (re.compile(r'romanc|махаббат|мелодрам', re.I), "Romance", "movie")
+]
+
+def detect_meta(title, url_path, default_g="General", default_t="movie"):
+    text = f"{title} {url_path}".lower()
+    for pattern, genre, c_type in GENRE_PATTERNS:
+        if pattern.search(text):
+            return genre, c_type
+    return default_g, default_t
 
 # =========================================================================
 # 1. DAILYMOTION PROCESSOR
@@ -48,7 +67,9 @@ def process_dailymotion_item(item):
         streams = session.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
-            meta = f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="{item["logo"]}" group-title="{item["genres"]}",{item["title"]}'
+            c_type = item.get("type", "movie")
+            genre = item.get("genres", "Comedy")
+            meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{item["logo"]}" group-title="{genre}",{item["title"]}'
             print(f"[SUCCESS DM] {item['title']}")
             return meta, url
     except Exception as e:
@@ -73,6 +94,8 @@ def fetch_all_dailymotion():
 def fetch_single_qazaqstan_cat(category):
     group_name = category["group"]
     target_url = category["url"]
+    def_genre = category.get("default_genre", "General")
+    def_type = category.get("default_type", "movie")
     entries = []
 
     proxied_url = f"{WORKER_PROXY}{quote(target_url, safe='')}"
@@ -101,12 +124,15 @@ def fetch_single_qazaqstan_cat(category):
                 if logo and not logo.startswith('http'):
                     logo = urljoin("https://qazaqstan.tv", logo)
 
+                # Deteksi Otomatis Genre & Tipe (movie/series/anime)
+                genre, c_type = detect_meta(title, href, def_genre, def_type)
+
                 stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
-                meta = f'#EXTINF:-1 vod="1" tvg-logo="{logo}" group-title="{group_name}",{title}'
+                meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{title}'
                 
                 entries.append(meta)
                 entries.append(stream_url)
-                print(f"[SUCCESS QZ] {title}")
+                print(f"[SUCCESS QZ] {title} ({genre} - {c_type})")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
@@ -128,37 +154,26 @@ def fetch_all_qazaqstan():
 def generate_vod_playlist():
     print("[*] Starting VOD Playlist Generation...")
 
-    # Header khusus HTML/Redirection milik kamu
     m3u = [
-        "<!--more-->",
-        "<html>",
-        "<head>",
-        '<meta charset="utf-8">',
+        "<!--more-->", "<html>", "<head>", '<meta charset="utf-8">',
         '<meta http-equiv="X-UA-Compatible" content="IE=edge">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<script language=\"javascript\">",
         'window.location.replace("https://sulthanpamenan.github.io/vod-playlist/");',
-        "</script>",
-        "</head></html>",
-        "",
+        "</script>", "</head></html>", "",
         "<================== PLAYLIST AUTOGENERATED BY SUTAN PAMENAN ==================>",
         "<================== IF YOU FIND THIS PLAYLIST, PLEASE DO NOT SELL OR DISTRIBUTE IT FOR PERSONAL GAIN ==================>",
-        "",
-        "#EXTM3U",
-        ""
+        "", "#EXTM3U", ""
     ]
 
-    # Process Dailymotion VOD
     print("\n--- Processing Dailymotion VOD ---")
     dm_entries = fetch_all_dailymotion()
     m3u.extend(dm_entries)
 
-    # Process Qazaqstan VOD
     print("\n--- Processing Qazaqstan VOD ---")
     qz_entries = fetch_all_qazaqstan()
     m3u.extend(qz_entries)
 
-    # Output File
     output_filename = "playlist.m3u"
     with open(output_filename, "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
