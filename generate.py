@@ -32,9 +32,12 @@ QAZAQSTAN_CATEGORIES = [
 HTTP_SESSION = requests.Session()
 HTTP_SESSION.headers.update(HEADERS)
 
-# =========================================================================
-# DETEKSI GENRE & CONTENT-TYPE OTOMATIS
-# =========================================================================
+SL_SESSION = streamlink.Streamlink()
+SL_SESSION.set_option("http-headers", {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Referer": "https://www.dailymotion.com/"
+})
+
 GENRE_PATTERNS = [
     (re.compile(r'balapan|мульт|балалар|детский|animation|kids|anime', re.I), "Kids", "anime"),
     (re.compile(r'serial|телехикая|сериал|series|episode', re.I), "Drama", "series"),
@@ -57,14 +60,8 @@ def detect_meta(title, url_path, default_g="General", default_t="movie"):
 # 1. DAILYMOTION PROCESSOR
 # =========================================================================
 def process_dailymotion_item(item):
-    session = streamlink.Streamlink()
-    session.set_option("http-headers", {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": "https://www.dailymotion.com/"
-    })
-    
     try:
-        streams = session.streams(f"https://www.dailymotion.com/video/{item['id']}")
+        streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
             c_type = item.get("type", "movie")
@@ -83,14 +80,27 @@ def fetch_all_dailymotion():
     
     for res in results:
         if res:
-            meta, url = res
-            m3u_entries.append(meta)
-            m3u_entries.append(url)
+            m3u_entries.append(res[0])
+            m3u_entries.append(res[1])
     return m3u_entries
 
 # =========================================================================
 # 2. QAZAQSTAN VOD PROCESSOR
 # =========================================================================
+def extract_direct_media_url(page_url):
+    """Membuka halaman VOD untuk mengambil URL .mp4/.m3u8 yang tersembunyi"""
+    proxied_page = f"{WORKER_PROXY}{quote(page_url, safe='')}"
+    try:
+        res = HTTP_SESSION.get(proxied_page, timeout=8)
+        if res.status_code == 200:
+            # Cari link mp4 atau m3u8 dari server rtrk.kz / qazaqstan
+            media_match = re.search(r'(https?://[^\s\'"]*(?:rtrk\.kz|\.m3u8|\.mp4)[^\s\'"]*)', res.text, re.I)
+            if media_match:
+                return media_match.group(1)
+    except Exception:
+        pass
+    return None
+
 def fetch_single_qazaqstan_cat(category):
     group_name = category["group"]
     target_url = category["url"]
@@ -109,7 +119,8 @@ def fetch_single_qazaqstan_cat(category):
             visited_links = set()
             for card in cards:
                 href = card.get('href') or (card.find('a').get('href') if card.find('a') else "")
-                if not href or href in visited_links or href == "#": continue
+                if not href or href in visited_links or href == "#": 
+                    continue
 
                 full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
                 visited_links.add(href)
@@ -117,22 +128,29 @@ def fetch_single_qazaqstan_cat(category):
                 title_elem = card.find(['h3', 'h4', 'span', 'p', 'div'], class_=re.compile(r'title|name|label', re.I))
                 title = title_elem.get_text(strip=True) if title_elem else card.get_text(strip=True)
                 title = re.sub(r'\s+', ' ', title).strip()
-                if not title or len(title) < 3 or title.lower() in ['barlyq', 'все', 'more']: continue
+                if not title or len(title) < 3 or title.lower() in ['barlyq', 'все', 'more']: 
+                    continue
 
                 img_elem = card.find('img')
                 logo = img_elem.get('src', '') if img_elem else ""
                 if logo and not logo.startswith('http'):
                     logo = urljoin("https://qazaqstan.tv", logo)
 
-                # Deteksi Otomatis Genre & Tipe (movie/series/anime)
-                genre, c_type = detect_meta(title, href, def_genre, def_type)
+                # AMBIL LINK VIDEO ASLI (.mp4 / .m3u8)
+                direct_media = extract_direct_media_url(full_page_url)
+                if not direct_media:
+                    print(f"[SKIP QZ] Gagal mengekstrak MP4 dari {title}")
+                    continue
 
-                stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
+                # Bungkus link video asli dengan Worker Proxy
+                stream_url = f"{WORKER_PROXY}{quote(direct_media, safe='')}"
+                
+                genre, c_type = detect_meta(title, href, def_genre, def_type)
                 meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{title}'
                 
                 entries.append(meta)
                 entries.append(stream_url)
-                print(f"[SUCCESS QZ] {title} ({genre} - {c_type})")
+                print(f"[SUCCESS QZ PLAYABLE] {title} -> {direct_media[:40]}...")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
