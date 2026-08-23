@@ -77,39 +77,23 @@ def fetch_single_qazaqstan_cat(category):
 
     proxied_url = f"{WORKER_PROXY}{quote(target_url, safe='')}"
 
-    try:
-        res = HTTP_SESSION.get(proxied_url, timeout=12)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            cards = soup.find_all(['a', 'div'], class_=re.compile(r'card|item|video|project|serial', re.I))
-
-            visited_links = set()
-            for card in cards:
-                href = card.get('href') or (card.find('a').get('href') if card.find('a') else "")
-                if not href or href in visited_links or href == "#": continue
-
-                full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
-                visited_links.add(href)
-
-                title_elem = card.find(['h3', 'h4', 'span', 'p', 'div'], class_=re.compile(r'title|name|label', re.I))
-                title = title_elem.get_text(strip=True) if title_elem else card.get_text(strip=True)
-                title = re.sub(r'\s+', ' ', title).strip()
-                if not title or len(title) < 3 or title.lower() in ['barlyq', 'все', 'more']: continue
-
-                img_elem = card.find('img')
-                logo = img_elem.get('src', '') if img_elem else ""
-                if logo and not logo.startswith('http'):
-                    logo = urljoin("https://qazaqstan.tv", logo)
-
-                stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
-                meta = f'#EXTINF:-1 vod="1" tvg-logo="{logo}" group-title="{group_name}",{title}'
-                
-                entries.append(meta)
-                entries.append(stream_url)
-                print(f"[SUCCESS QZ] {title}")
-
-    except Exception as e:
-        print(f"[ERROR QZ] Category [{group_name}]: {e}")
+    # Ekstraksi URL Stream asli (.m3u8) dari dalam halaman web
+try:
+    detail_res = HTTP_SESSION.get(full_page_url, timeout=8)
+    if detail_res.status_code == 200:
+        # Mencari pattern link .m3u8 di dalam source code HTML
+        m3u8_match = re.search(r'https?://[^\s\'"]+\.m3u8[^\s\'"]*', detail_res.text)
+        if m3u8_match:
+            raw_m3u8 = m3u8_match.group(0)
+            # Bungkus dengan Cloudflare Worker untuk Bypass CORS/Headers
+            stream_url = f"{WORKER_PROXY}{quote(raw_m3u8, safe='')}"
+            
+            meta = f'#EXTINF:-1 vod="1" tvg-logo="{logo}" group-title="{group_name}",{title}'
+            entries.append(meta)
+            entries.append(stream_url)
+            print(f"[SUCCESS QZ STREAM] {title}")
+except Exception as err:
+    print(f"[SKIP QZ] Gagal mengambil m3u8 untuk {title}: {err}")
 
     return entries
 
