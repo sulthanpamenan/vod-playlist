@@ -1,12 +1,14 @@
 import re
 import requests
 import streamlink
-import yt_dlp
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
 # =========================================================================
 # CONFIGURATION
 # =========================================================================
+WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
+
 DAILYMOTION_ITEMS = [
     {"title": "Mohon Doa Restu", "id": "x9qtlim", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
     {"title": "Laura", "id": "x9f73iq", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
@@ -17,9 +19,10 @@ DAILYMOTION_ITEMS = [
     {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
-YOUTUBE_SOURCES = [
-    {"group": "Qazaqstan Serials", "url": "https://www.youtube.com/@qazaqstan_serials/videos", "genre": "Drama"},
-    {"group": "Qazaqstan Shows", "url": "https://www.youtube.com/@QazaqstanTV/videos", "genre": "Entertainment"}
+# Menggunakan Channel ID YouTube Resmi Qazaqstan
+YOUTUBE_CHANNELS = [
+    {"group": "Qazaqstan Serials", "channel_id": "UC94a8mS_JvL2A53e-e-Ea3g", "genre": "Drama"},
+    {"group": "Qazaqstan Shows", "channel_id": "UC62R3Mv3o1S4_5G-x_L2K-w", "genre": "Entertainment"}
 ]
 
 SL_SESSION = streamlink.Streamlink()
@@ -43,43 +46,48 @@ def process_dailymotion_item(item):
     return None
 
 # =========================================================================
-# YOUTUBE SOURCE (NATIVE OTT NAVIGATOR FORMAT)
+# YOUTUBE VIA INVIDIOUS API (LIGHTWEIGHT & SAFE)
 # =========================================================================
-def fetch_youtube_source(source):
+def fetch_youtube_channel(channel_info):
     entries = []
-    group = source["group"]
-    url = source["url"]
-    genre = source["genre"]
+    channel_id = channel_info["channel_id"]
+    genre = channel_info["genre"]
 
-    ydl_opts = {
-        'extract_flat': True,
-        'playlistend': 15,
-        'quiet': True,
-        'no_warnings': True
-    }
+    invidious_instances = [
+        "https://inv.tux.pizza",
+        "https://invidious.nerdvpn.de",
+        "https://invidious.drgns.space"
+    ]
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if 'entries' in info:
-                for entry in info['entries']:
-                    title = entry.get('title')
-                    video_id = entry.get('id')
-                    thumbnail = entry.get('thumbnail', 'https://qazaqstan.tv/assets/images/logo.png')
+    for instance in invidious_instances:
+        try:
+            api_url = f"{instance}/api/v1/channels/videos/{channel_id}"
+            res = requests.get(api_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            if res.status_code == 200:
+                videos = res.json()
+                for vid in videos[:15]:  # Ambil 15 video terbaru
+                    title = vid.get("title")
+                    video_id = vid.get("videoId")
                     
                     if not title or not video_id:
                         continue
 
-                    # Gunakan format plugin YouTube khusus OTT Navigator
-                    yt_stream_url = f"{WORKER_PROXY}https://www.youtube.com/watch?v={video_id}"
-                    
-                    meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
-                    entries.append(meta)
-                    entries.append(yt_stream_url)
-                    print(f"[SUCCESS YT] {title}")
+                    # Ambil Thumbnail
+                    thumbnails = vid.get("videoThumbnails", [])
+                    logo = thumbnails[0].get("url") if thumbnails else "https://qazaqstan.tv/assets/images/logo.png"
 
-    except Exception as e:
-        print(f"[ERROR YT] Source [{group}]: {e}")
+                    # Format URL YouTube standar dikirim ke Worker
+                    yt_url = f"https://www.youtube.com/watch?v={video_id}"
+                    stream_url = f"{WORKER_PROXY}{quote(yt_url, safe='')}"
+                    
+                    meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{logo}" group-title="{genre}",{title}'
+                    entries.append(meta)
+                    entries.append(stream_url)
+                    print(f"[SUCCESS YT] {title}")
+                break  # Berhasil ambil data, keluar dari loop instance
+        except Exception as e:
+            print(f"[RETRY YT] Instance {instance} failed: {e}")
+            continue
 
     return entries
 
@@ -110,7 +118,7 @@ def generate_vod_playlist():
 
     print("\n--- Processing YouTube Qazaqstan VOD ---")
     with ThreadPoolExecutor(max_workers=2) as executor:
-        for res_list in executor.map(fetch_youtube_source, YOUTUBE_SOURCES):
+        for res_list in executor.map(fetch_youtube_channel, YOUTUBE_CHANNELS):
             m3u.extend(res_list)
 
     with open("playlist.m3u", "w", encoding="utf-8") as f:
