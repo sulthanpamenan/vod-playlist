@@ -71,7 +71,7 @@ def fetch_youtube_source(source):
                         continue
 
                     # Gunakan format plugin YouTube khusus OTT Navigator
-                    yt_stream_url = f"plugin://plugin.video.youtube/play/?video_id={video_id}"
+                    yt_stream_url = f"{WORKER_PROXY}https://www.youtube.com/watch?v={video_id}"
                     
                     meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
                     entries.append(meta)
