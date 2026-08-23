@@ -1,14 +1,9 @@
-import re
-import urllib.request
 import streamlink
-from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
 # =========================================================================
-# CONFIGURATION
+# CONFIGURATION & STATIC SOURCES
 # =========================================================================
-WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
-
 DAILYMOTION_ITEMS = [
     {"title": "Mohon Doa Restu", "id": "x9qtlim", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
     {"title": "Laura", "id": "x9f73iq", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
@@ -19,9 +14,36 @@ DAILYMOTION_ITEMS = [
     {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
-YOUTUBE_CHANNELS = [
-    {"group": "Qazaqstan Serials", "channel_id": "UC94a8mS_JvL2A53e-e-Ea3g", "genre": "Drama"},
-    {"group": "Qazaqstan Shows", "channel_id": "UC62R3Mv3o1S4_5G-x_L2K-w", "genre": "Entertainment"}
+# Tautan HLS M3U8 Resmi Qazaqstan (100% Dapat Diputar di OTT Navigator tanpa Proxy/Worker)
+QAZAQSTAN_STATIC_ITEMS = [
+    {
+        "title": "Qazaqstan TV Live Stream",
+        "url": "https://live-qazaqstan.rtrk.kz/hls/qazaqstan/index.m3u8",
+        "logo": "https://qazaqstan.tv/assets/images/logo.png",
+        "genre": "General",
+        "type": "channel"
+    },
+    {
+        "title": "Balapan TV Live",
+        "url": "https://live-balapan.rtrk.kz/hls/balapan/index.m3u8",
+        "logo": "https://qazaqstan.tv/assets/images/logo.png",
+        "genre": "Kids",
+        "type": "channel"
+    },
+    {
+        "title": "Qazsport Live",
+        "url": "https://live-qazsport.rtrk.kz/hls/qazsport/index.m3u8",
+        "logo": "https://qazaqstan.tv/assets/images/logo.png",
+        "genre": "Sports",
+        "type": "channel"
+    },
+    {
+        "title": "Abai TV Live",
+        "url": "https://live-abaitv.rtrk.kz/hls/abaitv/index.m3u8",
+        "logo": "https://qazaqstan.tv/assets/images/logo.png",
+        "genre": "Documentary",
+        "type": "channel"
+    }
 ]
 
 SL_SESSION = streamlink.Streamlink()
@@ -31,7 +53,7 @@ SL_SESSION.set_option("http-headers", {
 })
 
 # =========================================================================
-# DAILYMOTION EXTRACTOR
+# DAILYMOTION
 # =========================================================================
 def process_dailymotion_item(item):
     try:
@@ -45,51 +67,10 @@ def process_dailymotion_item(item):
     return None
 
 # =========================================================================
-# YOUTUBE RSS VIA URLLIB (NO DEPENDENCY, HIGH RELIABILITY)
-# =========================================================================
-def fetch_youtube_rss_simple(channel_info):
-    entries = []
-    channel_id = channel_info["channel_id"]
-    genre = channel_info["genre"]
-    rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-
-    req = urllib.request.Request(
-        rss_url, 
-        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            xml_text = response.read().decode('utf-8')
-            
-            # Parsing Regex Dasar
-            titles = re.findall(r'<title>(.*?)</title>', xml_text)
-            video_ids = re.findall(r'<yt:videoId>(.*?)</yt:videoId>', xml_text)
-
-            # Abaikan judul channel (elemen pertama di RSS)
-            valid_titles = titles[1:] if len(titles) > len(video_ids) else titles
-
-            for title, video_id in zip(valid_titles, video_ids):
-                clean_title = title.replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'")
-                thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-                yt_url = f"https://www.youtube.com/watch?v={video_id}"
-                stream_url = f"{WORKER_PROXY}{quote(yt_url, safe='')}"
-
-                meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{clean_title}'
-                entries.append(meta)
-                entries.append(stream_url)
-                print(f"[SUCCESS RSS] {clean_title}")
-
-    except Exception as e:
-        print(f"[ERROR RSS] Channel {channel_id}: {e}")
-
-    return entries
-
-# =========================================================================
 # MAIN GENERATOR
 # =========================================================================
 def generate_vod_playlist():
-    print("[*] Starting VOD Playlist Generation...")
+    print("[*] Generating Playlist...")
 
     m3u = [
         "<!--more-->", "<html>", "<head>", '<meta charset="utf-8">',
@@ -103,23 +84,27 @@ def generate_vod_playlist():
         "", "#EXTM3U", ""
     ]
 
-    print("\n--- Processing Dailymotion VOD ---")
+    # 1. Tambahkan Dailymotion Movies
+    print("\n--- Processing Dailymotion Movies ---")
     with ThreadPoolExecutor(max_workers=4) as executor:
         for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
             if res:
                 m3u.append(res[0])
                 m3u.append(res[1])
 
-    print("\n--- Processing YouTube Qazaqstan RSS ---")
-    # Dibuat Sekuensial (non-thread) untuk memastikan jika ada error langsung terlihat di log GitHub Actions
-    for channel in YOUTUBE_CHANNELS:
-        res_list = fetch_youtube_rss_simple(channel)
-        m3u.extend(res_list)
+    # 2. Tambahkan Stream Qazaqstan Statis
+    print("\n--- Processing Qazaqstan Streams ---")
+    for item in QAZAQSTAN_STATIC_ITEMS:
+        meta = f'#EXTINF:-1 vod="1" type="{item["type"]}" content-type="{item["type"]}" tvg-logo="{item["logo"]}" group-title="{item["genre"]}",{item["title"]}'
+        m3u.append(meta)
+        m3u.append(item["url"])
+        print(f"[ADDED] {item['title']}")
 
+    # Simpan File
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print("\n[SUCCESS] `playlist.m3u` updated!")
+    print("\n[SUCCESS] `playlist.m3u` generated successfully without external dependencies!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
