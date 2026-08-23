@@ -1,8 +1,7 @@
 import re
 import requests
 import streamlink
-from bs4 import BeautifulSoup
-from urllib.parse import quote, urljoin
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
 # =========================================================================
@@ -23,10 +22,11 @@ DAILYMOTION_ITEMS = [
     {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
+# API Endpoint Internal Qazaqstan
 QAZAQSTAN_CATEGORIES = [
-    {"group": "Qazaqstan Serials", "url": "https://qazaqstan.tv/serials", "default_genre": "Drama", "default_type": "series"},
-    {"group": "Qazaqstan Shows", "url": "https://qazaqstan.tv/projects", "default_genre": "Entertainment", "default_type": "series"},
-    {"group": "Qazaqstan Documentaries", "url": "https://qazaqstan.tv/documentaries", "default_genre": "Documentary", "default_type": "movie"}
+    {"group": "Qazaqstan Serials", "api": "https://qazaqstan.tv/api/v1/videos?type=serials", "default_genre": "Drama", "default_type": "series"},
+    {"group": "Qazaqstan Shows", "api": "https://qazaqstan.tv/api/v1/videos?type=projects", "default_genre": "Entertainment", "default_type": "series"},
+    {"group": "Qazaqstan Documentaries", "api": "https://qazaqstan.tv/api/v1/videos?type=documentaries", "default_genre": "Documentary", "default_type": "movie"}
 ]
 
 HTTP_SESSION = requests.Session()
@@ -49,13 +49,15 @@ GENRE_PATTERNS = [
     (re.compile(r'romanc|махаббат|мелодрам', re.I), "Romance", "movie")
 ]
 
-def detect_meta(title, url_path, default_g="General", default_t="movie"):
-    text = f"{title} {url_path}".lower()
+def detect_meta(title, default_g="General", default_t="movie"):
     for pattern, genre, c_type in GENRE_PATTERNS:
-        if pattern.search(text):
+        if pattern.search(title):
             return genre, c_type
     return default_g, default_t
 
+# =========================================================================
+# 1. DAILYMOTION PROCESSOR
+# =========================================================================
 def process_dailymotion_item(item):
     try:
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
@@ -70,65 +72,73 @@ def process_dailymotion_item(item):
         print(f"[ERROR DM] {item['title']}: {e}")
     return None
 
+def fetch_all_dailymotion():
+    m3u_entries = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = executor.map(process_dailymotion_item, DAILYMOTION_ITEMS)
+    for res in results:
+        if res:
+            m3u_entries.append(res[0])
+            m3u_entries.append(res[1])
+    return m3u_entries
+
+# =========================================================================
+# 2. QAZAQSTAN VOD PROCESSOR (VIA API JSON)
+# =========================================================================
 def fetch_single_qazaqstan_cat(category):
     group_name = category["group"]
-    target_url = category["url"]
+    api_endpoint = category["api"]
     def_genre = category.get("default_genre", "General")
     def_type = category.get("default_type", "movie")
     entries = []
 
-    proxied_url = f"{WORKER_PROXY}{quote(target_url, safe='')}"
+    proxied_api_url = f"{WORKER_PROXY}{quote(api_endpoint, safe='')}"
 
     try:
-        res = HTTP_SESSION.get(proxied_url, timeout=12)
+        res = HTTP_SESSION.get(proxied_api_url, timeout=12)
         if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            
-            # AMBIL SELURUH TAG <a> TANPA MENGASUMSIKAN CLASS
-            visited_links = set()
-            for a_tag in soup.find_all('a', href=True):
-                href = a_tag['href']
+            json_response = res.json()
+            items = json_response.get('data', []) if isinstance(json_response, dict) else json_response
+
+            for item in items:
+                title = item.get('title') or item.get('name')
+                logo = item.get('poster') or item.get('image') or "https://qazaqstan.tv/assets/images/logo.png"
                 
-                # Filter hanya URL yang mengarah ke tayangan spesifik
-                if not any(k in href for k in ['/videos/', '/projects/', '/serials/', '/episode/']):
+                # Mengambil URL video langsung jika tersedia di API, atau membuat URL detail halaman
+                video_url = item.get('file_url') or item.get('video_url') or item.get('url')
+                if not video_url:
+                    item_id = item.get('id')
+                    if item_id:
+                        video_url = f"https://qazaqstan.tv/videos/{item_id}"
+
+                if not title or not video_url:
                     continue
-                if href in visited_links or href in ["/serials", "/projects", "/documentaries", "#"]:
-                    continue
 
-                full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
-                visited_links.add(href)
+                genre, c_type = detect_meta(title, def_genre, def_type)
 
-                # Ambil Judul dari Teks Tag <a> atau dari Slug URL
-                title = a_tag.get_text(strip=True)
-                if not title or len(title) < 3:
-                    slug = href.rstrip('/').split('/')[-1]
-                    title = slug.replace('-', ' ').title()
-
-                clean_title = re.sub(r'\s+', ' ', title).strip()
-
-                # Ambil Gambar Poster jika tersedia
-                img_elem = a_tag.find('img')
-                logo = img_elem.get('src', '') if img_elem else ""
-                if logo and not logo.startswith('http'):
-                    logo = urljoin("https://qazaqstan.tv", logo)
-                if not logo:
-                    logo = "https://qazaqstan.tv/assets/images/logo.png"
-
-                genre, c_type = detect_meta(clean_title, href, def_genre, def_type)
-
-                # Bungkus dengan Worker Proxy
-                stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
-                meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{clean_title}'
+                stream_url = f"{WORKER_PROXY}{quote(video_url, safe='')}"
+                meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{title}'
                 
                 entries.append(meta)
                 entries.append(stream_url)
-                print(f"[SUCCESS QZ] {clean_title}")
+                print(f"[SUCCESS QZ API] {title}")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
 
     return entries
 
+def fetch_all_qazaqstan():
+    m3u_entries = []
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        results = executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES)
+    for res_list in results:
+        m3u_entries.extend(res_list)
+    return m3u_entries
+
+# =========================================================================
+# MAIN GENERATOR
+# =========================================================================
 def generate_vod_playlist():
     print("[*] Starting VOD Playlist Generation...")
 
@@ -145,21 +155,18 @@ def generate_vod_playlist():
     ]
 
     print("\n--- Processing Dailymotion VOD ---")
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
-            if res:
-                m3u.append(res[0])
-                m3u.append(res[1])
+    dm_entries = fetch_all_dailymotion()
+    m3u.extend(dm_entries)
 
     print("\n--- Processing Qazaqstan VOD ---")
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        for res_list in executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES):
-            m3u.extend(res_list)
+    qz_entries = fetch_all_qazaqstan()
+    m3u.extend(qz_entries)
 
-    with open("playlist.m3u", "w", encoding="utf-8") as f:
+    output_filename = "playlist.m3u"
+    with open(output_filename, "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print(f"\n[SUCCESS] Combined VOD `playlist.m3u` updated successfully!")
+    print(f"\n[SUCCESS] Combined VOD `{output_filename}` updated successfully!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
