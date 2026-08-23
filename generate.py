@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 # CONFIGURATION & CONSTANTS
 # =========================================================================
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
 
@@ -92,32 +92,60 @@ def fetch_single_qazaqstan_cat(category):
     try:
         res = HTTP_SESSION.get(proxied_cat_url, timeout=12)
         if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            links = soup.find_all('a', href=True)
+            html_text = res.text
+            soup = BeautifulSoup(html_text, 'html.parser')
 
+            # Temukan semua tautan video/halaman detail
+            vod_matches = re.findall(r'href=["\'](/[^"\']*(?:serials|projects|videos|episode)[^"\']*)["\']', html_text, re.I)
+            
             visited = set()
-            for l in links:
-                href = l['href']
-                if not href or href in visited or href == "#": 
-                    continue
-                
-                if not any(k in href for k in ['/videos/', '/projects/', '/serials/', '/episode/']): 
+            for href in vod_matches:
+                if not href or href in visited or href in ["/serials", "/projects", "/documentaries"]: 
                     continue
 
                 full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
                 visited.add(href)
 
-                raw_title = l.get_text(strip=True) or "Qazaqstan Content"
-                clean_title = re.sub(r'\s+', ' ', raw_title).strip()
+                # Buka halaman detail untuk mencari URL video MP4 dari rtrk.kz
+                direct_mp4 = ""
+                title = ""
+                logo = "https://qazaqstan.tv/assets/images/logo.png"
 
-                img_elem = l.find('img')
-                logo = img_elem.get('src', '') if img_elem else ""
-                if logo and not logo.startswith('http'):
-                    logo = urljoin("https://qazaqstan.tv", logo)
+                try:
+                    detail_res = HTTP_SESSION.get(f"{WORKER_PROXY}{quote(full_page_url, safe='')}", timeout=8)
+                    if detail_res.status_code == 200:
+                        detail_html = detail_res.text
+                        
+                        # Cari URL .mp4 langsung di dalam kode HTML/JS halaman detail
+                        mp4_match = re.search(r'(https?://[^\s\'"]*rtrk\.kz[^\s\'"]*\.mp4)', detail_html, re.I)
+                        if mp4_match:
+                            direct_mp4 = mp4_match.group(1)
+
+                        # Ambil Judul
+                        detail_soup = BeautifulSoup(detail_html, 'html.parser')
+                        title_elem = detail_soup.find(['h1', 'h2', 'h3', 'title'])
+                        if title_elem:
+                            title = title_elem.get_text(strip=True)
+
+                except Exception:
+                    pass
+
+                # Fallback jika judul tidak ditemukan di HTML
+                if not title:
+                    slug = href.rstrip('/').split('/')[-1]
+                    title = slug.replace('-', ' ').title()
+
+                clean_title = re.sub(r'\s+', ' ', title).strip()
+
+                # Jika menemukan URL MP4 langsung, bungkus dengan Worker Proxy
+                if direct_mp4:
+                    stream_url = f"{WORKER_PROXY}{quote(direct_mp4, safe='')}"
+                else:
+                    # Fallback jika MP4 tidak langsung terekstrak
+                    stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
 
                 dominant_genre, content_type = detect_metadata(clean_title, href, fallback_genre=default_genre, fallback_type=default_type)
 
-                stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
                 meta = f'#EXTINF:-1 vod="1" type="{content_type}" content-type="{content_type}" tvg-logo="{logo}" group-title="{dominant_genre}",{clean_title}'
                 
                 entries.append(meta)
