@@ -7,8 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 # =========================================================================
 # CONFIGURATION
 # =========================================================================
-WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
-
 DAILYMOTION_ITEMS = [
     {"title": "Mohon Doa Restu", "id": "x9qtlim", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
     {"title": "Laura", "id": "x9f73iq", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
@@ -19,7 +17,6 @@ DAILYMOTION_ITEMS = [
     {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
-# Tambahkan URL Playlist/Channel Resmi Qazaqstan dari YouTube di sini
 YOUTUBE_SOURCES = [
     {"group": "Qazaqstan Serials", "url": "https://www.youtube.com/@qazaqstan_serials/videos", "genre": "Drama"},
     {"group": "Qazaqstan Shows", "url": "https://www.youtube.com/@QazaqstanTV/videos", "genre": "Entertainment"}
@@ -46,8 +43,31 @@ def process_dailymotion_item(item):
     return None
 
 # =========================================================================
-# YOUTUBE QAZAQSTAN EXTRACTOR
+# YOUTUBE STREAM EXTRACTOR (DIRECT STREAM URL)
 # =========================================================================
+def process_yt_video(video_info, genre):
+    video_url = f"https://www.youtube.com/watch?v={video_info['id']}"
+    title = video_info.get('title', 'Video Qazaqstan')
+    thumbnail = video_info.get('thumbnail', 'https://qazaqstan.tv/assets/images/logo.png')
+
+    ydl_opts = {
+        'format': 'best',
+        'quiet': True,
+        'no_warnings': True
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            stream_url = info.get('url')
+            if stream_url:
+                meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
+                print(f"[SUCCESS YT DIRECT] {title}")
+                return meta, stream_url
+    except Exception as e:
+        print(f"[ERROR YT DIRECT] {title}: {e}")
+    return None
+
 def fetch_youtube_source(source):
     entries = []
     group = source["group"]
@@ -56,33 +76,30 @@ def fetch_youtube_source(source):
 
     ydl_opts = {
         'extract_flat': True,
-        'playlistend': 15,  # Mengambil 15 video terbaru per channel
+        'playlistend': 10,  # Ambil 10 video terbaru
         'quiet': True,
         'no_warnings': True
     }
 
+    raw_videos = []
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             if 'entries' in info:
                 for entry in info['entries']:
-                    title = entry.get('title')
-                    video_id = entry.get('id')
-                    thumbnail = entry.get('thumbnail', 'https://qazaqstan.tv/assets/images/logo.png')
-                    
-                    if not title or not video_id:
-                        continue
-
-                    # URL video YouTube yang dapat diputar
-                    yt_video_url = f"https://www.youtube.com/watch?v={video_id}"
-                    
-                    meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
-                    entries.append(meta)
-                    entries.append(yt_video_url)
-                    print(f"[SUCCESS YT] {title}")
-
+                    if entry.get('id'):
+                        raw_videos.append(entry)
     except Exception as e:
-        print(f"[ERROR YT] Source [{group}]: {e}")
+        print(f"[ERROR YT FLAT] Source [{group}]: {e}")
+        return entries
+
+    # Ekstrak URL stream direct secara paralel
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        results = executor.map(lambda v: process_yt_video(v, genre), raw_videos)
+        for res in results:
+            if res:
+                entries.append(res[0])
+                entries.append(res[1])
 
     return entries
 
@@ -111,7 +128,7 @@ def generate_vod_playlist():
                 m3u.append(res[0])
                 m3u.append(res[1])
 
-    print("\n--- Processing YouTube Qazaqstan VOD ---")
+    print("\n--- Processing YouTube Direct Streams ---")
     with ThreadPoolExecutor(max_workers=2) as executor:
         for res_list in executor.map(fetch_youtube_source, YOUTUBE_SOURCES):
             m3u.extend(res_list)
@@ -119,7 +136,7 @@ def generate_vod_playlist():
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print("\n[SUCCESS] `playlist.m3u` updated successfully!")
+    print("\n[SUCCESS] `playlist.m3u` updated with direct video URLs!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
