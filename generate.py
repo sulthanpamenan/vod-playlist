@@ -9,9 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 # CONFIGURATION & CONSTANTS
 # =========================================================================
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
 
@@ -46,7 +44,6 @@ GENRE_PATTERNS = [
     (re.compile(r'фильм|кино|драма|movie|cinema', re.I), "Drama", "movie"),
     (re.compile(r'show|шоу|жоба|проекты|проектами|бағдарлама|tv show|entertainment', re.I), "Entertainment", "series"),
     (re.compile(r'doc|дерек|документальный|история|тарих|documentary', re.I), "Documentary", "movie"),
-    (re.compile(r'news|жаңалық|спорт|sport|хабар|ақпарат|новости', re.I), "News & Sports", "movie"),
     (re.compile(r'comed|комед|әзіл|юмор', re.I), "Comedy", "movie"),
     (re.compile(r'romanc|махаббат|мелодрам', re.I), "Romance", "movie")
 ]
@@ -58,9 +55,6 @@ def detect_meta(title, url_path, default_g="General", default_t="movie"):
             return genre, c_type
     return default_g, default_t
 
-# =========================================================================
-# 1. DAILYMOTION PROCESSOR
-# =========================================================================
 def process_dailymotion_item(item):
     try:
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
@@ -69,25 +63,11 @@ def process_dailymotion_item(item):
             c_type = item.get("type", "movie")
             genre = item.get("genres", "Comedy")
             meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{item["logo"]}" group-title="{genre}",{item["title"]}'
-            print(f"[SUCCESS DM] {item['title']}")
             return meta, url
     except Exception as e:
         print(f"[ERROR DM] {item['title']}: {e}")
     return None
 
-def fetch_all_dailymotion():
-    m3u_entries = []
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        results = executor.map(process_dailymotion_item, DAILYMOTION_ITEMS)
-    for res in results:
-        if res:
-            m3u_entries.append(res[0])
-            m3u_entries.append(res[1])
-    return m3u_entries
-
-# =========================================================================
-# 2. QAZAQSTAN VOD PROCESSOR
-# =========================================================================
 def fetch_single_qazaqstan_cat(category):
     group_name = category["group"]
     target_url = category["url"]
@@ -96,27 +76,35 @@ def fetch_single_qazaqstan_cat(category):
     entries = []
 
     try:
-        # Panggil langsung tanpa Worker Proxy saat scraping M3U di GitHub Actions
         res = HTTP_SESSION.get(target_url, timeout=12)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
-            
             visited_links = set()
+
             for a_tag in soup.find_all('a', href=True):
                 href = a_tag['href']
                 
-                if not any(k in href for k in ['/videos/', '/projects/', '/serials/', '/episode/']):
+                # FILTER UTAMA: Hanya ambil URL yang menuju video episode langsung (/videos/)
+                if '/videos/' not in href:
                     continue
-                if href in visited_links or href in ["/serials", "/projects", "/documentaries", "#"]:
+                if href in visited_links:
                     continue
 
                 full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
                 visited_links.add(href)
 
                 title = a_tag.get_text(strip=True)
-                if not title or len(title) < 3:
+                if not title or title.lower() in ['онлайн көру', 'толығырақ', '']:
+                    # Jika judul berupa tombol umum, ambil judul parent atau slug
+                    parent = a_tag.find_parent(['div', 'article'])
+                    if parent:
+                        h_tag = parent.find(['h2', 'h3', 'h4', 'a'])
+                        if h_tag and h_tag.get_text(strip=True) not in ['Онлайн көру', 'Толығырақ']:
+                            title = h_tag.get_text(strip=True)
+
+                if not title or title.lower() in ['онлайн көру', 'толығырақ']:
                     slug = href.rstrip('/').split('/')[-1]
-                    title = slug.replace('-', ' ').title()
+                    title = f"Episode {slug}"
 
                 clean_title = re.sub(r'\s+', ' ', title).strip()
 
@@ -129,30 +117,17 @@ def fetch_single_qazaqstan_cat(category):
 
                 genre, c_type = detect_meta(clean_title, href, def_genre, def_type)
 
-                # Link tayangan tetap dibungkus Worker Proxy agar bisa memutar .mp4/.m3u8 di OTT Navigator
                 stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
                 meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{clean_title}'
                 
                 entries.append(meta)
                 entries.append(stream_url)
-                print(f"[SUCCESS QZ] {clean_title}")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
 
     return entries
 
-def fetch_all_qazaqstan():
-    m3u_entries = []
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES)
-    for res_list in results:
-        m3u_entries.extend(res_list)
-    return m3u_entries
-
-# =========================================================================
-# MAIN GENERATOR
-# =========================================================================
 def generate_vod_playlist():
     print("[*] Starting VOD Playlist Generation...")
 
@@ -168,19 +143,20 @@ def generate_vod_playlist():
         "", "#EXTM3U", ""
     ]
 
-    print("\n--- Processing Dailymotion VOD ---")
-    dm_entries = fetch_all_dailymotion()
-    m3u.extend(dm_entries)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
+            if res:
+                m3u.append(res[0])
+                m3u.append(res[1])
 
-    print("\n--- Processing Qazaqstan VOD ---")
-    qz_entries = fetch_all_qazaqstan()
-    m3u.extend(qz_entries)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        for res_list in executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES):
+            m3u.extend(res_list)
 
-    output_filename = "playlist.m3u"
-    with open(output_filename, "w", encoding="utf-8") as f:
+    with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print(f"\n[SUCCESS] Combined VOD `playlist.m3u` updated successfully!")
+    print("[SUCCESS] Playlist updated without category page errors!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
