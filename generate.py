@@ -5,6 +5,9 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote, urljoin
 from concurrent.futures import ThreadPoolExecutor
 
+# =========================================================================
+# CONFIGURATION & CONSTANTS
+# =========================================================================
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
@@ -85,7 +88,8 @@ def fetch_single_qazaqstan_cat(category):
             visited_links = set()
             for card in cards:
                 href = card.get('href') or (card.find('a').get('href') if card.find('a') else "")
-                if not href or href in visited_links or href == "#": continue
+                if not href or href in visited_links or href == "#": 
+                    continue
 
                 full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
                 visited_links.add(href)
@@ -93,16 +97,31 @@ def fetch_single_qazaqstan_cat(category):
                 title_elem = card.find(['h3', 'h4', 'span', 'p', 'div'], class_=re.compile(r'title|name|label', re.I))
                 title = title_elem.get_text(strip=True) if title_elem else card.get_text(strip=True)
                 title = re.sub(r'\s+', ' ', title).strip()
-                if not title or len(title) < 3 or title.lower() in ['barlyq', 'все', 'more']: continue
+                if not title or len(title) < 3 or title.lower() in ['barlyq', 'все', 'more']: 
+                    continue
 
                 img_elem = card.find('img')
                 logo = img_elem.get('src', '') if img_elem else ""
                 if logo and not logo.startswith('http'):
                     logo = urljoin("https://qazaqstan.tv", logo)
 
-                genre, c_type = detect_meta(title, href, def_genre, def_type)
+                # EKSTRAKSI URL MP4 DARI JS PLAYER HALAMAN DETAIL
+                direct_mp4 = None
+                try:
+                    detail_res = HTTP_SESSION.get(f"{WORKER_PROXY}{quote(full_page_url, safe='')}", timeout=8)
+                    if detail_res.status_code == 200:
+                        # Mencari pola URL istorage...rtrk.kz/*.mp4 di dalam JavaScript
+                        mp4_match = re.search(r'(https?://istorage[^\s\'"]*rtrk\.kz[^\s\'"]*\.mp4)', detail_res.text, re.I)
+                        if mp4_match:
+                            direct_mp4 = mp4_match.group(1)
+                except Exception:
+                    pass
 
-                stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
+                # Jika MP4 tidak terekstrak di Python, gunakan fallback link web yang akan ditangani Worker saat diputar
+                stream_target = direct_mp4 if direct_mp4 else full_page_url
+                stream_url = f"{WORKER_PROXY}{quote(stream_target, safe='')}"
+                
+                genre, c_type = detect_meta(title, href, def_genre, def_type)
                 meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{title}'
                 
                 entries.append(meta)
