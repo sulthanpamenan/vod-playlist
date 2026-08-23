@@ -1,15 +1,15 @@
 import re
 import requests
 import streamlink
-from bs4 import BeautifulSoup
-from urllib.parse import quote, urljoin
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
 # =========================================================================
 # CONFIGURATION & CONSTANTS
 # =========================================================================
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Referer": "https://qazaqstan.tv/"
 }
 WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
 
@@ -23,10 +23,11 @@ DAILYMOTION_ITEMS = [
     {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
+# Kategori API Qazaqstan
 QAZAQSTAN_CATEGORIES = [
-    {"group": "Qazaqstan Serials", "url": "https://qazaqstan.tv/serials", "default_genre": "Drama", "default_type": "series"},
-    {"group": "Qazaqstan Shows", "url": "https://qazaqstan.tv/projects", "default_genre": "Entertainment", "default_type": "series"},
-    {"group": "Qazaqstan Documentaries", "url": "https://qazaqstan.tv/documentaries", "default_genre": "Documentary", "default_type": "movie"}
+    {"group": "Qazaqstan Serials", "api_url": "https://qazaqstan.tv/api/v1/serials", "default_genre": "Drama", "default_type": "series"},
+    {"group": "Qazaqstan Shows", "api_url": "https://qazaqstan.tv/api/v1/projects", "default_genre": "Entertainment", "default_type": "series"},
+    {"group": "Qazaqstan Documentaries", "api_url": "https://qazaqstan.tv/api/v1/documentaries", "default_genre": "Documentary", "default_type": "movie"}
 ]
 
 HTTP_SESSION = requests.Session()
@@ -49,10 +50,9 @@ GENRE_PATTERNS = [
     (re.compile(r'romanc|махаббат|мелодрам', re.I), "Romance", "movie")
 ]
 
-def detect_meta(title, url_path, default_g="General", default_t="movie"):
-    text = f"{title} {url_path}".lower()
+def detect_meta(title, default_g="General", default_t="movie"):
     for pattern, genre, c_type in GENRE_PATTERNS:
-        if pattern.search(text):
+        if pattern.search(title):
             return genre, c_type
     return default_g, default_t
 
@@ -77,7 +77,6 @@ def fetch_all_dailymotion():
     m3u_entries = []
     with ThreadPoolExecutor(max_workers=4) as executor:
         results = executor.map(process_dailymotion_item, DAILYMOTION_ITEMS)
-    
     for res in results:
         if res:
             m3u_entries.append(res[0])
@@ -85,72 +84,63 @@ def fetch_all_dailymotion():
     return m3u_entries
 
 # =========================================================================
-# 2. QAZAQSTAN VOD PROCESSOR
+# 2. QAZAQSTAN VOD PROCESSOR (API BASED)
 # =========================================================================
-def extract_direct_media_url(page_url):
-    """Membuka halaman VOD untuk mengambil URL .mp4/.m3u8 yang tersembunyi"""
-    proxied_page = f"{WORKER_PROXY}{quote(page_url, safe='')}"
+def get_stream_from_rtrk_api(video_id):
+    """Mengambil link .mp4 / .m3u8 langsung dari Player API rtrk.kz"""
     try:
-        res = HTTP_SESSION.get(proxied_page, timeout=8)
+        player_api = f"https://player.rtrk.kz/get-video?id={video_id}"
+        proxied_api = f"{WORKER_PROXY}{quote(player_api, safe='')}"
+        
+        res = HTTP_SESSION.get(proxied_api, timeout=8)
         if res.status_code == 200:
-            # Cari link mp4 atau m3u8 dari server rtrk.kz / qazaqstan
-            media_match = re.search(r'(https?://[^\s\'"]*(?:rtrk\.kz|\.m3u8|\.mp4)[^\s\'"]*)', res.text, re.I)
-            if media_match:
-                return media_match.group(1)
+            data = res.json()
+            # Cari field URL video di respon JSON API
+            file_url = data.get('file') or data.get('url') or data.get('src')
+            if file_url:
+                return file_url
     except Exception:
         pass
     return None
 
 def fetch_single_qazaqstan_cat(category):
     group_name = category["group"]
-    target_url = category["url"]
+    api_url = category["api_url"]
     def_genre = category.get("default_genre", "General")
     def_type = category.get("default_type", "movie")
     entries = []
 
-    proxied_url = f"{WORKER_PROXY}{quote(target_url, safe='')}"
+    proxied_url = f"{WORKER_PROXY}{quote(api_url, safe='')}"
 
     try:
         res = HTTP_SESSION.get(proxied_url, timeout=12)
         if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            cards = soup.find_all(['a', 'div'], class_=re.compile(r'card|item|video|project|serial', re.I))
+            json_data = res.json()
+            # Ambil item video dari daftar API
+            items = json_data.get('data', []) if isinstance(json_data, dict) else json_data
 
-            visited_links = set()
-            for card in cards:
-                href = card.get('href') or (card.find('a').get('href') if card.find('a') else "")
-                if not href or href in visited_links or href == "#": 
+            for item in items:
+                video_id = item.get('id') or item.get('video_id')
+                title = item.get('title') or item.get('name')
+                logo = item.get('poster') or item.get('image') or "https://qazaqstan.tv/assets/images/logo.png"
+
+                if not video_id or not title:
                     continue
 
-                full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
-                visited_links.add(href)
-
-                title_elem = card.find(['h3', 'h4', 'span', 'p', 'div'], class_=re.compile(r'title|name|label', re.I))
-                title = title_elem.get_text(strip=True) if title_elem else card.get_text(strip=True)
-                title = re.sub(r'\s+', ' ', title).strip()
-                if not title or len(title) < 3 or title.lower() in ['barlyq', 'все', 'more']: 
+                # Panggil API player untuk dapatkan link MP4/M3U8 langsung
+                direct_stream = get_stream_from_rtrk_api(video_id)
+                if not direct_stream:
                     continue
 
-                img_elem = card.find('img')
-                logo = img_elem.get('src', '') if img_elem else ""
-                if logo and not logo.startswith('http'):
-                    logo = urljoin("https://qazaqstan.tv", logo)
+                # Bungkus link video asli (.mp4/.m3u8) dengan Worker Proxy
+                stream_url = f"{WORKER_PROXY}{quote(direct_stream, safe='')}"
 
-                # AMBIL LINK VIDEO ASLI (.mp4 / .m3u8)
-                direct_media = extract_direct_media_url(full_page_url)
-                if not direct_media:
-                    print(f"[SKIP QZ] Gagal mengekstrak MP4 dari {title}")
-                    continue
-
-                # Bungkus link video asli dengan Worker Proxy
-                stream_url = f"{WORKER_PROXY}{quote(direct_media, safe='')}"
-                
-                genre, c_type = detect_meta(title, href, def_genre, def_type)
+                genre, c_type = detect_meta(title, def_genre, def_type)
                 meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{title}'
-                
+
                 entries.append(meta)
                 entries.append(stream_url)
-                print(f"[SUCCESS QZ PLAYABLE] {title} -> {direct_media[:40]}...")
+                print(f"[SUCCESS QZ API] {title} -> {direct_stream[:45]}...")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
@@ -161,7 +151,6 @@ def fetch_all_qazaqstan():
     m3u_entries = []
     with ThreadPoolExecutor(max_workers=3) as executor:
         results = executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES)
-    
     for res_list in results:
         m3u_entries.extend(res_list)
     return m3u_entries
