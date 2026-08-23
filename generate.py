@@ -1,6 +1,7 @@
 import re
 import requests
 import streamlink
+import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
@@ -19,7 +20,7 @@ DAILYMOTION_ITEMS = [
     {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
-# Menggunakan Channel ID YouTube Resmi Qazaqstan
+# RSS Feed YouTube Resmi
 YOUTUBE_CHANNELS = [
     {"group": "Qazaqstan Serials", "channel_id": "UC94a8mS_JvL2A53e-e-Ea3g", "genre": "Drama"},
     {"group": "Qazaqstan Shows", "channel_id": "UC62R3Mv3o1S4_5G-x_L2K-w", "genre": "Entertainment"}
@@ -46,48 +47,39 @@ def process_dailymotion_item(item):
     return None
 
 # =========================================================================
-# YOUTUBE VIA INVIDIOUS API (LIGHTWEIGHT & SAFE)
+# YOUTUBE VIA RSS FEED (100% STABLE & NO BLOCK)
 # =========================================================================
-def fetch_youtube_channel(channel_info):
+def fetch_youtube_rss(channel_info):
     entries = []
     channel_id = channel_info["channel_id"]
     genre = channel_info["genre"]
+    rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
-    invidious_instances = [
-        "https://inv.tux.pizza",
-        "https://invidious.nerdvpn.de",
-        "https://invidious.drgns.space"
-    ]
+    try:
+        res = requests.get(rss_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if res.status_code == 200:
+            root = ET.fromstring(res.content)
+            ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
 
-    for instance in invidious_instances:
-        try:
-            api_url = f"{instance}/api/v1/channels/videos/{channel_id}"
-            res = requests.get(api_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-            if res.status_code == 200:
-                videos = res.json()
-                for vid in videos[:15]:  # Ambil 15 video terbaru
-                    title = vid.get("title")
-                    video_id = vid.get("videoId")
+            for entry in root.findall('atom:entry', ns):
+                title_elem = entry.find('atom:title', ns)
+                yt_vid_elem = entry.find('yt:videoId', ns)
+
+                if title_elem is not None and yt_vid_elem is not None:
+                    title = title_elem.text
+                    video_id = yt_vid_elem.text
                     
-                    if not title or not video_id:
-                        continue
-
-                    # Ambil Thumbnail
-                    thumbnails = vid.get("videoThumbnails", [])
-                    logo = thumbnails[0].get("url") if thumbnails else "https://qazaqstan.tv/assets/images/logo.png"
-
-                    # Format URL YouTube standar dikirim ke Worker
+                    thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
                     yt_url = f"https://www.youtube.com/watch?v={video_id}"
                     stream_url = f"{WORKER_PROXY}{quote(yt_url, safe='')}"
-                    
-                    meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{logo}" group-title="{genre}",{title}'
+
+                    meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
                     entries.append(meta)
                     entries.append(stream_url)
-                    print(f"[SUCCESS YT] {title}")
-                break  # Berhasil ambil data, keluar dari loop instance
-        except Exception as e:
-            print(f"[RETRY YT] Instance {instance} failed: {e}")
-            continue
+                    print(f"[SUCCESS RSS] {title}")
+
+    except Exception as e:
+        print(f"[ERROR RSS] {channel_id}: {e}")
 
     return entries
 
@@ -116,9 +108,9 @@ def generate_vod_playlist():
                 m3u.append(res[0])
                 m3u.append(res[1])
 
-    print("\n--- Processing YouTube Qazaqstan VOD ---")
+    print("\n--- Processing YouTube Qazaqstan RSS ---")
     with ThreadPoolExecutor(max_workers=2) as executor:
-        for res_list in executor.map(fetch_youtube_channel, YOUTUBE_CHANNELS):
+        for res_list in executor.map(fetch_youtube_rss, YOUTUBE_CHANNELS):
             m3u.extend(res_list)
 
     with open("playlist.m3u", "w", encoding="utf-8") as f:
