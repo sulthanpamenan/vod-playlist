@@ -5,9 +5,6 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote, urljoin
 from concurrent.futures import ThreadPoolExecutor
 
-# =========================================================================
-# CONFIGURATION & CONSTANTS
-# =========================================================================
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
@@ -38,31 +35,12 @@ SL_SESSION.set_option("http-headers", {
     "Referer": "https://www.dailymotion.com/"
 })
 
-GENRE_PATTERNS = [
-    (re.compile(r'balapan|мульт|балалар|детский|animation|kids|anime', re.I), "Kids", "anime"),
-    (re.compile(r'serial|телехикая|сериал|series|episode', re.I), "Drama", "series"),
-    (re.compile(r'фильм|кино|драма|movie|cinema', re.I), "Drama", "movie"),
-    (re.compile(r'show|шоу|жоба|проекты|проектами|бағдарлама|tv show|entertainment', re.I), "Entertainment", "series"),
-    (re.compile(r'doc|дерек|документальный|история|тарих|documentary', re.I), "Documentary", "movie"),
-    (re.compile(r'comed|комед|әзіл|юмор', re.I), "Comedy", "movie"),
-    (re.compile(r'romanc|махаббат|мелодрам', re.I), "Romance", "movie")
-]
-
-def detect_meta(title, url_path, default_g="General", default_t="movie"):
-    text = f"{title} {url_path}".lower()
-    for pattern, genre, c_type in GENRE_PATTERNS:
-        if pattern.search(text):
-            return genre, c_type
-    return default_g, default_t
-
 def process_dailymotion_item(item):
     try:
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
-            c_type = item.get("type", "movie")
-            genre = item.get("genres", "Comedy")
-            meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{item["logo"]}" group-title="{genre}",{item["title"]}'
+            meta = f'#EXTINF:-1 vod="1" type="{item.get("type", "movie")}" content-type="{item.get("type", "movie")}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
             return meta, url
     except Exception as e:
         print(f"[ERROR DM] {item['title']}: {e}")
@@ -84,10 +62,8 @@ def fetch_single_qazaqstan_cat(category):
             for a_tag in soup.find_all('a', href=True):
                 href = a_tag['href']
                 
-                # FILTER UTAMA: Hanya ambil URL yang menuju video episode langsung (/videos/)
-                if '/videos/' not in href:
-                    continue
-                if href in visited_links:
+                # Mengambil URL video
+                if '/videos/' not in href or href in visited_links:
                     continue
 
                 full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
@@ -95,14 +71,6 @@ def fetch_single_qazaqstan_cat(category):
 
                 title = a_tag.get_text(strip=True)
                 if not title or title.lower() in ['онлайн көру', 'толығырақ', '']:
-                    # Jika judul berupa tombol umum, ambil judul parent atau slug
-                    parent = a_tag.find_parent(['div', 'article'])
-                    if parent:
-                        h_tag = parent.find(['h2', 'h3', 'h4', 'a'])
-                        if h_tag and h_tag.get_text(strip=True) not in ['Онлайн көру', 'Толығырақ']:
-                            title = h_tag.get_text(strip=True)
-
-                if not title or title.lower() in ['онлайн көру', 'толығырақ']:
                     slug = href.rstrip('/').split('/')[-1]
                     title = f"Episode {slug}"
 
@@ -115,10 +83,9 @@ def fetch_single_qazaqstan_cat(category):
                 if not logo:
                     logo = "https://qazaqstan.tv/assets/images/logo.png"
 
-                genre, c_type = detect_meta(clean_title, href, def_genre, def_type)
-
+                # Link dibungkus ke Worker, dan Worker yang bertugas mengekstrak .mp4 saat video diklik
                 stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
-                meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{clean_title}'
+                meta = f'#EXTINF:-1 vod="1" type="{def_type}" content-type="{def_type}" tvg-logo="{logo}" group-title="{def_genre}",{clean_title}'
                 
                 entries.append(meta)
                 entries.append(stream_url)
@@ -129,7 +96,7 @@ def fetch_single_qazaqstan_cat(category):
     return entries
 
 def generate_vod_playlist():
-    print("[*] Starting VOD Playlist Generation...")
+    print("[*] Generating VOD Playlist...")
 
     m3u = [
         "<!--more-->", "<html>", "<head>", '<meta charset="utf-8">',
@@ -156,7 +123,7 @@ def generate_vod_playlist():
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print("[SUCCESS] Playlist updated without category page errors!")
+    print("[SUCCESS] Playlist updated!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
