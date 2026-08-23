@@ -43,31 +43,8 @@ def process_dailymotion_item(item):
     return None
 
 # =========================================================================
-# YOUTUBE STREAM EXTRACTOR (DIRECT STREAM URL)
+# YOUTUBE SOURCE (NATIVE OTT NAVIGATOR FORMAT)
 # =========================================================================
-def process_yt_video(video_info, genre):
-    video_url = f"https://www.youtube.com/watch?v={video_info['id']}"
-    title = video_info.get('title', 'Video Qazaqstan')
-    thumbnail = video_info.get('thumbnail', 'https://qazaqstan.tv/assets/images/logo.png')
-
-    ydl_opts = {
-        'format': 'best',
-        'quiet': True,
-        'no_warnings': True
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            stream_url = info.get('url')
-            if stream_url:
-                meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
-                print(f"[SUCCESS YT DIRECT] {title}")
-                return meta, stream_url
-    except Exception as e:
-        print(f"[ERROR YT DIRECT] {title}: {e}")
-    return None
-
 def fetch_youtube_source(source):
     entries = []
     group = source["group"]
@@ -76,30 +53,33 @@ def fetch_youtube_source(source):
 
     ydl_opts = {
         'extract_flat': True,
-        'playlistend': 10,  # Ambil 10 video terbaru
+        'playlistend': 15,
         'quiet': True,
         'no_warnings': True
     }
 
-    raw_videos = []
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             if 'entries' in info:
                 for entry in info['entries']:
-                    if entry.get('id'):
-                        raw_videos.append(entry)
-    except Exception as e:
-        print(f"[ERROR YT FLAT] Source [{group}]: {e}")
-        return entries
+                    title = entry.get('title')
+                    video_id = entry.get('id')
+                    thumbnail = entry.get('thumbnail', 'https://qazaqstan.tv/assets/images/logo.png')
+                    
+                    if not title or not video_id:
+                        continue
 
-    # Ekstrak URL stream direct secara paralel
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = executor.map(lambda v: process_yt_video(v, genre), raw_videos)
-        for res in results:
-            if res:
-                entries.append(res[0])
-                entries.append(res[1])
+                    # Gunakan format plugin YouTube khusus OTT Navigator
+                    yt_stream_url = f"plugin://plugin.video.youtube/play/?video_id={video_id}"
+                    
+                    meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
+                    entries.append(meta)
+                    entries.append(yt_stream_url)
+                    print(f"[SUCCESS YT] {title}")
+
+    except Exception as e:
+        print(f"[ERROR YT] Source [{group}]: {e}")
 
     return entries
 
@@ -128,7 +108,7 @@ def generate_vod_playlist():
                 m3u.append(res[0])
                 m3u.append(res[1])
 
-    print("\n--- Processing YouTube Direct Streams ---")
+    print("\n--- Processing YouTube Qazaqstan VOD ---")
     with ThreadPoolExecutor(max_workers=2) as executor:
         for res_list in executor.map(fetch_youtube_source, YOUTUBE_SOURCES):
             m3u.extend(res_list)
@@ -136,7 +116,7 @@ def generate_vod_playlist():
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print("\n[SUCCESS] `playlist.m3u` updated with direct video URLs!")
+    print("\n[SUCCESS] `playlist.m3u` updated successfully!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
