@@ -5,8 +5,12 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote, urljoin
 from concurrent.futures import ThreadPoolExecutor
 
+# =========================================================================
+# CONFIGURATION & CONSTANTS
+# =========================================================================
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Referer": "https://qazaqstan.tv/"
 }
 WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
 
@@ -35,15 +39,37 @@ SL_SESSION.set_option("http-headers", {
     "Referer": "https://www.dailymotion.com/"
 })
 
+# =========================================================================
+# DAILYMOTION
+# =========================================================================
 def process_dailymotion_item(item):
     try:
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
-            meta = f'#EXTINF:-1 vod="1" type="{item.get("type", "movie")}" content-type="{item.get("type", "movie")}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
+            c_type = item.get("type", "movie")
+            genre = item.get("genres", "Comedy")
+            meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{item["logo"]}" group-title="{genre}",{item["title"]}'
             return meta, url
     except Exception as e:
         print(f"[ERROR DM] {item['title']}: {e}")
+    return None
+
+# =========================================================================
+# QAZAQSTAN EXTRACTOR VIA PLAYER API
+# =========================================================================
+def get_qazaqstan_direct_stream(video_id):
+    """Menembak Player API Qazaqstan untuk mengambil URL .mp4/.m3u8 asli"""
+    try:
+        # Coba panggil player embed internal
+        embed_url = f"https://qazaqstan.tv/player/{video_id}"
+        res = HTTP_SESSION.get(embed_url, timeout=8)
+        if res.status_code == 200:
+            match = re.search(r'(https?://[^\s\'"]+\.(?:mp4|m3u8)[^\s\'"]*)', res.text, re.I)
+            if match:
+                return match.group(1).replace('\\', '')
+    except Exception:
+        pass
     return None
 
 def fetch_single_qazaqstan_cat(category):
@@ -57,22 +83,39 @@ def fetch_single_qazaqstan_cat(category):
         res = HTTP_SESSION.get(target_url, timeout=12)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
-            visited_links = set()
+            visited_ids = set()
 
             for a_tag in soup.find_all('a', href=True):
                 href = a_tag['href']
                 
-                # Mengambil URL video
-                if '/videos/' not in href or href in visited_links:
+                if '/videos/' not in href:
                     continue
 
-                full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
-                visited_links.add(href)
+                # Ambil ID video unik dari URL (misal: 221009)
+                video_id_match = re.search(r'/videos/(\d+)', href)
+                if not video_id_match:
+                    continue
+                
+                video_id = video_id_match.group(1)
+                if video_id in visited_ids:
+                    continue
+                visited_ids.add(video_id)
+
+                # Dapatkan URL berkas video langsung dari API
+                direct_media_url = get_qazaqstan_direct_stream(video_id)
+                if not direct_media_url:
+                    continue
 
                 title = a_tag.get_text(strip=True)
                 if not title or title.lower() in ['онлайн көру', 'толығырақ', '']:
-                    slug = href.rstrip('/').split('/')[-1]
-                    title = f"Episode {slug}"
+                    parent = a_tag.find_parent(['div', 'article'])
+                    if parent:
+                        h_tag = parent.find(['h2', 'h3', 'h4'])
+                        if h_tag:
+                            title = h_tag.get_text(strip=True)
+
+                if not title or title.lower() in ['онлайн көру', 'толығырақ']:
+                    title = f"Episode {video_id}"
 
                 clean_title = re.sub(r'\s+', ' ', title).strip()
 
@@ -83,20 +126,24 @@ def fetch_single_qazaqstan_cat(category):
                 if not logo:
                     logo = "https://qazaqstan.tv/assets/images/logo.png"
 
-                # Link dibungkus ke Worker, dan Worker yang bertugas mengekstrak .mp4 saat video diklik
-                stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
+                # Bungkus direct media URL dengan Worker Proxy
+                stream_url = f"{WORKER_PROXY}{quote(direct_media_url, safe='')}"
                 meta = f'#EXTINF:-1 vod="1" type="{def_type}" content-type="{def_type}" tvg-logo="{logo}" group-title="{def_genre}",{clean_title}'
                 
                 entries.append(meta)
                 entries.append(stream_url)
+                print(f"[SUCCESS] {clean_title} -> Direct Video Added")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
 
     return entries
 
+# =========================================================================
+# MAIN GENERATOR
+# =========================================================================
 def generate_vod_playlist():
-    print("[*] Generating VOD Playlist...")
+    print("[*] Starting VOD Playlist Generation...")
 
     m3u = [
         "<!--more-->", "<html>", "<head>", '<meta charset="utf-8">',
@@ -123,7 +170,7 @@ def generate_vod_playlist():
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print("[SUCCESS] Playlist updated!")
+    print("[SUCCESS] Playlist updated successfully with direct stream links!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
