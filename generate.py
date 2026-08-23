@@ -1,5 +1,5 @@
 import re
-import requests
+import urllib.request
 import streamlink
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
@@ -45,41 +45,40 @@ def process_dailymotion_item(item):
     return None
 
 # =========================================================================
-# YOUTUBE RSS VIA REGEX (BULLETPROOF & NO-FAIL)
+# YOUTUBE RSS VIA URLLIB (NO DEPENDENCY, HIGH RELIABILITY)
 # =========================================================================
-def fetch_youtube_rss(channel_info):
+def fetch_youtube_rss_simple(channel_info):
     entries = []
     channel_id = channel_info["channel_id"]
     genre = channel_info["genre"]
     rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
-    try:
-        res = requests.get(rss_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if res.status_code == 200:
-            xml_text = res.text
-            
-            # Pecah setiap blok entry
-            entry_blocks = re.findall(r'<entry>(.*?)</entry>', xml_text, re.DOTALL)
-            
-            for block in entry_blocks:
-                video_id_match = re.search(r'<yt:videoId>(.*?)</yt:videoId>', block)
-                title_match = re.search(r'<title>(.*?)</title>', block)
-                
-                if video_id_match and title_match:
-                    video_id = video_id_match.group(1).strip()
-                    title = title_match.group(1).strip()
-                    
-                    # Bersihkan karakter khusus HTML
-                    title = title.replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'")
-                    
-                    thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-                    yt_url = f"https://www.youtube.com/watch?v={video_id}"
-                    stream_url = f"{WORKER_PROXY}{quote(yt_url, safe='')}"
+    req = urllib.request.Request(
+        rss_url, 
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    )
 
-                    meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
-                    entries.append(meta)
-                    entries.append(stream_url)
-                    print(f"[SUCCESS RSS REGEX] {title}")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            xml_text = response.read().decode('utf-8')
+            
+            # Parsing Regex Dasar
+            titles = re.findall(r'<title>(.*?)</title>', xml_text)
+            video_ids = re.findall(r'<yt:videoId>(.*?)</yt:videoId>', xml_text)
+
+            # Abaikan judul channel (elemen pertama di RSS)
+            valid_titles = titles[1:] if len(titles) > len(video_ids) else titles
+
+            for title, video_id in zip(valid_titles, video_ids):
+                clean_title = title.replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'")
+                thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+                yt_url = f"https://www.youtube.com/watch?v={video_id}"
+                stream_url = f"{WORKER_PROXY}{quote(yt_url, safe='')}"
+
+                meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{clean_title}'
+                entries.append(meta)
+                entries.append(stream_url)
+                print(f"[SUCCESS RSS] {clean_title}")
 
     except Exception as e:
         print(f"[ERROR RSS] Channel {channel_id}: {e}")
@@ -112,14 +111,15 @@ def generate_vod_playlist():
                 m3u.append(res[1])
 
     print("\n--- Processing YouTube Qazaqstan RSS ---")
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        for res_list in executor.map(fetch_youtube_rss, YOUTUBE_CHANNELS):
-            m3u.extend(res_list)
+    # Dibuat Sekuensial (non-thread) untuk memastikan jika ada error langsung terlihat di log GitHub Actions
+    for channel in YOUTUBE_CHANNELS:
+        res_list = fetch_youtube_rss_simple(channel)
+        m3u.extend(res_list)
 
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print("\n[SUCCESS] `playlist.m3u` updated successfully!")
+    print("\n[SUCCESS] `playlist.m3u` updated!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
