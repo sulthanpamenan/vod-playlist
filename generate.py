@@ -1,7 +1,6 @@
 import re
 import requests
 import streamlink
-import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
@@ -20,7 +19,6 @@ DAILYMOTION_ITEMS = [
     {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
-# RSS Feed YouTube Resmi
 YOUTUBE_CHANNELS = [
     {"group": "Qazaqstan Serials", "channel_id": "UC94a8mS_JvL2A53e-e-Ea3g", "genre": "Drama"},
     {"group": "Qazaqstan Shows", "channel_id": "UC62R3Mv3o1S4_5G-x_L2K-w", "genre": "Entertainment"}
@@ -47,7 +45,7 @@ def process_dailymotion_item(item):
     return None
 
 # =========================================================================
-# YOUTUBE VIA RSS FEED (100% STABLE & NO BLOCK)
+# YOUTUBE RSS VIA REGEX (BULLETPROOF & NO-FAIL)
 # =========================================================================
 def fetch_youtube_rss(channel_info):
     entries = []
@@ -58,16 +56,21 @@ def fetch_youtube_rss(channel_info):
     try:
         res = requests.get(rss_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         if res.status_code == 200:
-            root = ET.fromstring(res.content)
-            ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
-
-            for entry in root.findall('atom:entry', ns):
-                title_elem = entry.find('atom:title', ns)
-                yt_vid_elem = entry.find('yt:videoId', ns)
-
-                if title_elem is not None and yt_vid_elem is not None:
-                    title = title_elem.text
-                    video_id = yt_vid_elem.text
+            xml_text = res.text
+            
+            # Pecah setiap blok entry
+            entry_blocks = re.findall(r'<entry>(.*?)</entry>', xml_text, re.DOTALL)
+            
+            for block in entry_blocks:
+                video_id_match = re.search(r'<yt:videoId>(.*?)</yt:videoId>', block)
+                title_match = re.search(r'<title>(.*?)</title>', block)
+                
+                if video_id_match and title_match:
+                    video_id = video_id_match.group(1).strip()
+                    title = title_match.group(1).strip()
+                    
+                    # Bersihkan karakter khusus HTML
+                    title = title.replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'")
                     
                     thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
                     yt_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -76,10 +79,10 @@ def fetch_youtube_rss(channel_info):
                     meta = f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="{thumbnail}" group-title="{genre}",{title}'
                     entries.append(meta)
                     entries.append(stream_url)
-                    print(f"[SUCCESS RSS] {title}")
+                    print(f"[SUCCESS RSS REGEX] {title}")
 
     except Exception as e:
-        print(f"[ERROR RSS] {channel_id}: {e}")
+        print(f"[ERROR RSS] Channel {channel_id}: {e}")
 
     return entries
 
