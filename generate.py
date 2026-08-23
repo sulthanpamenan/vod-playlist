@@ -83,55 +83,57 @@ def fetch_single_qazaqstan_cat(category):
         res = HTTP_SESSION.get(proxied_url, timeout=12)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
-            cards = soup.find_all(['a', 'div'], class_=re.compile(r'card|item|video|project|serial', re.I))
+            # Memindai seluruh link di halaman kategori
+            links = soup.find_all('a', href=True)
 
             visited_links = set()
-            for card in cards:
-                href = card.get('href') or (card.find('a').get('href') if card.find('a') else "")
-                if not href or href in visited_links or href == "#": 
+            for a in links:
+                href = a['href']
+                if not href or href in visited_links or href in ["#", "/serials", "/projects", "/documentaries"]: 
+                    continue
+
+                if not any(k in href for k in ['/videos/', '/projects/', '/serials/', '/episode/']): 
                     continue
 
                 full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
                 visited_links.add(href)
 
-                title_elem = card.find(['h3', 'h4', 'span', 'p', 'div'], class_=re.compile(r'title|name|label', re.I))
-                title = title_elem.get_text(strip=True) if title_elem else card.get_text(strip=True)
-                title = re.sub(r'\s+', ' ', title).strip()
-                if not title or len(title) < 3 or title.lower() in ['barlyq', 'все', 'more']: 
-                    continue
+                # Ambil Judul
+                title = a.get_text(strip=True)
+                if not title or len(title) < 3:
+                    slug = href.rstrip('/').split('/')[-1]
+                    title = slug.replace('-', ' ').title()
 
-                img_elem = card.find('img')
+                clean_title = re.sub(r'\s+', ' ', title).strip()
+
+                # Ambil Poster/Logo
+                img_elem = a.find('img')
                 logo = img_elem.get('src', '') if img_elem else ""
                 if logo and not logo.startswith('http'):
                     logo = urljoin("https://qazaqstan.tv", logo)
 
-                # EKSTRAKSI URL MP4 DARI JS PLAYER HALAMAN DETAIL
-                direct_mp4 = None
-                try:
-                    detail_res = HTTP_SESSION.get(f"{WORKER_PROXY}{quote(full_page_url, safe='')}", timeout=8)
-                    if detail_res.status_code == 200:
-                        # Mencari pola URL istorage...rtrk.kz/*.mp4 di dalam JavaScript
-                        mp4_match = re.search(r'(https?://istorage[^\s\'"]*rtrk\.kz[^\s\'"]*\.mp4)', detail_res.text, re.I)
-                        if mp4_match:
-                            direct_mp4 = mp4_match.group(1)
-                except Exception:
-                    pass
+                genre, c_type = detect_meta(clean_title, href, def_genre, def_type)
 
-                # Jika MP4 tidak terekstrak di Python, gunakan fallback link web yang akan ditangani Worker saat diputar
-                stream_target = direct_mp4 if direct_mp4 else full_page_url
-                stream_url = f"{WORKER_PROXY}{quote(stream_target, safe='')}"
-                
-                genre, c_type = detect_meta(title, href, def_genre, def_type)
-                meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{title}'
+                # Masukkan URL halaman VOD yang dibungkus Worker Proxy
+                stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
+                meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{logo}" group-title="{genre}",{clean_title}'
                 
                 entries.append(meta)
                 entries.append(stream_url)
-                print(f"[SUCCESS QZ] {title}")
+                print(f"[SUCCESS QZ] {clean_title}")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
 
     return entries
+
+def fetch_all_qazaqstan():
+    m3u_entries = []
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        results = executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES)
+    for res_list in results:
+        m3u_entries.extend(res_list)
+    return m3u_entries
 
 def generate_vod_playlist():
     print("[*] Starting VOD Playlist Generation...")
@@ -156,14 +158,14 @@ def generate_vod_playlist():
                 m3u.append(res[1])
 
     print("\n--- Processing Qazaqstan VOD ---")
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        for res_list in executor.map(fetch_single_qazaqstan_cat, QAZAQSTAN_CATEGORIES):
-            m3u.extend(res_list)
+    qz_entries = fetch_all_qazaqstan()
+    m3u.extend(qz_entries)
 
-    with open("playlist.m3u", "w", encoding="utf-8") as f:
+    output_filename = "playlist.m3u"
+    with open(output_filename, "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
 
-    print(f"\n[SUCCESS] `playlist.m3u` updated successfully!")
+    print(f"\n[SUCCESS] Combined VOD `{output_filename}` updated successfully!")
 
 if __name__ == "__main__":
     generate_vod_playlist()
