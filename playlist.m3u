@@ -3,13 +3,27 @@
 
 #EXTM3U
 
+#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg" group-title="Comedy",Mohon Doa Restu
+https://vod3.cf.dmcdn.net/sec2(iwqpYpKb_2bEenQXKywfHEqGeoTXdNzh5iPvXgDYU-0vA58ypr4VGG73TRpMTukdXXu3sNDUKUD9hOrzepVL3sBdTgbktyClxeNtz18RLWYow5vS9AHU6fknnM7V5f0-AwFuAGrx3iE-6AzLdAfSQ2xm51voIX069TvOqtG0CYB-0PdaWJ12tNLOqQB4U2TGIvcsLr6jRpFBh__UePwLLw)/video/fmp4/589246510/h264_aac_hq/1/manifest.m3u8#cell=cf3
+#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg" group-title="Drama",Laura
+https://vod3.cf.dmcdn.net/sec2(qQqXi9yVvyt5q-2Sp1NURvt92LCu2jgxFGTHqaGwjWnxHw4PEtv_FPyFwC5b6cue2KVHvL1wVTiXUe6ah9jeoaE9A3Y749PsWXan8yva3su_U4wvW9CdK9UsI6nG9l_Slkcvioq_9tuN93Vx1Kgb8Y1Cny7d4Xy0jLwyF958RDOIywz2aZuv6N9wtiK_QRv3)/video/879/027/569720978_mp4_h264_aac_hd_2.m3u8#cell=cf3
+#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg" group-title="Drama",Tujuh Hari Untuk Keshia
+https://vod3.cf.dmcdn.net/sec2(FoVRFkMblSEjYotxKL4l_VpW6jy79nXcshnSwFfVDTy1yPuHmz0FmMrf6K3OCVYW2Daz3DYCrD9VDJLgyheacsFPIJrRKjPeMy0UOpQnlsBQ7xk8xWnktfZq7mvb0E7k_Ry7CCUucRCW61LXI7timY5Qcg2G8ySF6Tp5x5Iwomi0_t0LeBVGnJyF_Ho3axG_)/video/013/163/566361310_mp4_h264_aac_fhd_2.m3u8#cell=cf3
+#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg" group-title="Drama",Lovely Man
+https://vod3.cf.dmcdn.net/sec2(8wSZltiFfOc8CRoo7vzcPcoy9NzmhBUw0CEg66VT8nMhPLmEVvCVTA76W8p_Co8OofU5V0W6wW1lF03gL2KUwX_A3JMWR7GwzsN_6lleb0mpBKeNMciKdJhUN37KrptmkxkUXTNwtVAVTZw-KKDX7q7dL7_PnMvbcpHaOm-i8-GOqb-yldFaoGmz2Xi2g3rM)/video/674/422/546224476_mp4_h264_aac_hd_2.m3u8#cell=cf3
+#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg" group-title="Comedy",Father's Haunted House
+https://vod3.cf.dmcdn.net/sec2(8AbmYtL6W73OZEzOJjj7nTqSTtJJE0S3Fov8Q0zGbKNeOAnMZAWmuB4gJBH-J7Vw44IxdmaZnADNV4gaH6RHrublZboh93-76QsP5zMpWkFirlQ1uCxeOD6eQa8wkI3pNh0Tp0FjrV5oCGXHVtn3ILhHJmq_NDNAoyXZP-7oPLN2IkjLbAOdHBfTwTgMwhWW)/video/618/330/575033816_mp4_h264_aac_hd_2.m3u8#cell=cf3
+#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg" group-title="Romance",Merindu Cahaya De Amstel
+https://vod3.cf.dmcdn.net/sec2(BgG-jlyWrpz7XQODMTL4h_UvCZZyhNFJTjolbogqmiTIqWJgJpV5zKI8ER6PtPWLILUXzoSODrrxqqs5vuJDHFEU97UT7k6ChCy14KSZAijljB82W-a3F6geoRpEFJiFOjQVPmUYi8oIztNLVd93H7gkjY17FNxQOtdkpGzNo_36ThZLnlyO55lpNPZx9ROW)/video/689/490/561094986_mp4_h264_aac_fhd_2.m3u8#cell=cf3
+#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-logo="https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg" group-title="Comedy",Pasutri Gaje
+https://vod3.cf.dmcdn.net/sec2(fkQD_03PJY1jbqalWy4h9i11nJaUeJJjFR8_cRp9IF7cci9OAGgaNfXsnJIpB-4rud4kNocQTh8b5XxyT3e_XflP9WDqIpwFlXLC1BmxIq5tj-6U-oO1f3Bufz3pZJQmp5KK2dnZFRrCr2-bkkj1NQEuMA6f6zVG-DzVcOgkQolFUhgml8ODa6w2xWVwq80e)/video/246/535/578535642_mp4_h264_aac_hd_1.m3u8#cell=cf3
 #EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="https://i.ytimg.com/vi/zOkUNdjrb2E/hqdefault.jpg" group-title="Drama",«СЫРҒАЛЫМ». Телехикая. 31-бөлім
-https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url=https://www.youtube.com/watch?v=zOkUNdjrb2E
+https://www.youtube.com/watch?v=zOkUNdjrb2E
 #EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="https://i.ytimg.com/vi/WAkp0zTgwZE/hqdefault.jpg" group-title="Drama",«СЫРҒАЛЫМ». Телехикая. 30-бөлім
-https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url=https://www.youtube.com/watch?v=WAkp0zTgwZE
+https://www.youtube.com/watch?v=WAkp0zTgwZE
 #EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="https://i.ytimg.com/vi/dhvLfr7k1T0/hqdefault.jpg" group-title="Entertainment",Депрессиядан қалай шығамыз?
-https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url=https://www.youtube.com/watch?v=dhvLfr7k1T0
+https://www.youtube.com/watch?v=dhvLfr7k1T0
 #EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="https://i.ytimg.com/vi/ILF9nM8yDOU/hqdefault.jpg" group-title="Entertainment",Жасампаз ұлт. Қалалық әдебиет
-https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url=https://www.youtube.com/watch?v=ILF9nM8yDOU
+https://www.youtube.com/watch?v=ILF9nM8yDOU
 #EXTINF:-1 vod="1" type="series" content-type="series" tvg-logo="https://i.ytimg.com/vi/EvTSvF8OrCI/hqdefault.jpg" group-title="Entertainment",Қазақстанның жаңа дәуірі
-https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url=https://www.youtube.com/watch?v=EvTSvF8OrCI
+https://www.youtube.com/watch?v=EvTSvF8OrCI
