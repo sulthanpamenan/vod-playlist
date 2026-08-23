@@ -77,23 +77,49 @@ def fetch_single_qazaqstan_cat(category):
 
     proxied_url = f"{WORKER_PROXY}{quote(target_url, safe='')}"
 
-    # Ekstraksi URL Stream asli (.m3u8) dari dalam halaman web
-try:
-    detail_res = HTTP_SESSION.get(full_page_url, timeout=8)
-    if detail_res.status_code == 200:
-        # Mencari pattern link .m3u8 di dalam source code HTML
-        m3u8_match = re.search(r'https?://[^\s\'"]+\.m3u8[^\s\'"]*', detail_res.text)
-        if m3u8_match:
-            raw_m3u8 = m3u8_match.group(0)
-            # Bungkus dengan Cloudflare Worker untuk Bypass CORS/Headers
-            stream_url = f"{WORKER_PROXY}{quote(raw_m3u8, safe='')}"
-            
-            meta = f'#EXTINF:-1 vod="1" tvg-logo="{logo}" group-title="{group_name}",{title}'
-            entries.append(meta)
-            entries.append(stream_url)
-            print(f"[SUCCESS QZ STREAM] {title}")
-except Exception as err:
-    print(f"[SKIP QZ] Gagal mengambil m3u8 untuk {title}: {err}")
+    try:
+        res = HTTP_SESSION.get(proxied_url, timeout=12)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            cards = soup.find_all(['a', 'div'], class_=re.compile(r'card|item|video|project|serial', re.I))
+
+            visited_links = set()
+            for card in cards:
+                href = card.get('href') or (card.find('a').get('href') if card.find('a') else "")
+                if not href or href in visited_links or href == "#": 
+                    continue
+
+                full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
+                visited_links.add(href)
+
+                title_elem = card.find(['h3', 'h4', 'span', 'p', 'div'], class_=re.compile(r'title|name|label', re.I))
+                title = title_elem.get_text(strip=True) if title_elem else card.get_text(strip=True)
+                title = re.sub(r'\s+', ' ', title).strip()
+                if not title or len(title) < 3 or title.lower() in ['barlyq', 'все', 'more']: 
+                    continue
+
+                img_elem = card.find('img')
+                logo = img_elem.get('src', '') if img_elem else ""
+                if logo and not logo.startswith('http'):
+                    logo = urljoin("https://qazaqstan.tv", logo)
+
+                # Ekstraksi URL Stream .m3u8 asli di dalam halaman detail
+                try:
+                    detail_res = HTTP_SESSION.get(full_page_url, timeout=8)
+                    if detail_res.status_code == 200:
+                        m3u8_match = re.search(r'https?://[^\s\'"]+\.m3u8[^\s\'"]*', detail_res.text)
+                        if m3u8_match:
+                            raw_m3u8 = m3u8_match.group(0)
+                            stream_url = f"{WORKER_PROXY}{quote(raw_m3u8, safe='')}"
+                            meta = f'#EXTINF:-1 vod="1" tvg-logo="{logo}" group-title="{group_name}",{title}'
+                            entries.append(meta)
+                            entries.append(stream_url)
+                            print(f"[SUCCESS QZ STREAM] {title}")
+                except Exception as err:
+                    print(f"[SKIP QZ] Gagal mengambil m3u8 untuk {title}: {err}")
+
+    except Exception as e:
+        print(f"[ERROR QZ] Category [{group_name}]: {e}")
 
     return entries
 
@@ -112,7 +138,6 @@ def fetch_all_qazaqstan():
 def generate_vod_playlist():
     print("[*] Starting VOD Playlist Generation...")
 
-    # Header khusus HTML/Redirection milik kamu
     m3u = [
         "<!--more-->",
         "<html>",
@@ -132,17 +157,14 @@ def generate_vod_playlist():
         ""
     ]
 
-    # Process Dailymotion VOD
     print("\n--- Processing Dailymotion VOD ---")
     dm_entries = fetch_all_dailymotion()
     m3u.extend(dm_entries)
 
-    # Process Qazaqstan VOD
     print("\n--- Processing Qazaqstan VOD ---")
     qz_entries = fetch_all_qazaqstan()
     m3u.extend(qz_entries)
 
-    # Output File
     output_filename = "playlist.m3u"
     with open(output_filename, "w", encoding="utf-8") as f:
         f.write("\n".join(m3u))
