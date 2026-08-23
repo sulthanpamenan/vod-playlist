@@ -9,8 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 # CONFIGURATION & CONSTANTS
 # =========================================================================
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Referer": "https://qazaqstan.tv/"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 WORKER_PROXY = "https://qazaqstan-playlist.sulthan-pamenan.workers.dev/?url="
 
@@ -39,24 +38,6 @@ SL_SESSION.set_option("http-headers", {
     "Referer": "https://www.dailymotion.com/"
 })
 
-GENRE_PATTERNS = [
-    (re.compile(r'balapan|мульт|балалар|детский|animation|kids|anime', re.I), "Kids", "anime"),
-    (re.compile(r'serial|телехикая|сериал|series|episode', re.I), "Drama", "series"),
-    (re.compile(r'фильм|кино|драма|movie|cinema', re.I), "Drama", "movie"),
-    (re.compile(r'show|шоу|жоба|проекты|проектами|бағдарлама|tv show|entertainment', re.I), "Entertainment", "series"),
-    (re.compile(r'doc|дерек|документальный|история|тарих|documentary', re.I), "Documentary", "movie"),
-    (re.compile(r'news|жаңалық|спорт|sport|хабар|ақпарат|новости', re.I), "News & Sports", "movie"),
-    (re.compile(r'comed|комед|әзіл|юмор', re.I), "Comedy", "movie"),
-    (re.compile(r'romanc|махаббат|мелодрам', re.I), "Romance", "movie")
-]
-
-def detect_metadata(title, url_path, fallback_genre="General", fallback_type="movie"):
-    text_to_scan = f"{title} {url_path}".lower()
-    for pattern, genre, content_type in GENRE_PATTERNS:
-        if pattern.search(text_to_scan):
-            return genre, content_type
-    return fallback_genre, fallback_type
-
 # =========================================================================
 # 1. DAILYMOTION PROCESSOR
 # =========================================================================
@@ -69,7 +50,7 @@ def process_dailymotion_item(item):
             c_type = item.get("type", "movie")
             
             meta = f'#EXTINF:-1 vod="1" type="{c_type}" content-type="{c_type}" tvg-logo="{item["logo"]}" group-title="{genre}",{item["title"]}'
-            print(f"[SUCCESS DM] {item['title']} -> Genre: {genre} | Type: {c_type}")
+            print(f"[SUCCESS DM] {item['title']}")
             return meta, url
     except Exception as e:
         print(f"[ERROR DM] {item['title']}: {e}")
@@ -78,74 +59,59 @@ def process_dailymotion_item(item):
 # =========================================================================
 # 2. QAZAQSTAN VOD PROCESSOR
 # =========================================================================
-def extract_qazaqstan_media(video_page_url):
-    """Mengekstrak ID Video dan memanggil API Player RTRK untuk mendapatkan tautan MP4"""
-    try:
-        # 1. Ambil ID video dari URL (contoh: /videos/220637 -> ID 220637)
-        video_id_match = re.search(r'/(?:videos|serials|projects)/(\d+)', video_page_url)
-        if not video_id_match:
-            return None, None, None
-
-        video_id = video_id_match.group(1)
-        
-        # 2. Tembak API Internal Player Qazaqstan lewat Worker Proxy
-        api_url = f"https://player.rtrk.kz/get-video?id={video_id}"
-        proxied_api = f"{WORKER_PROXY}{quote(api_url, safe='')}"
-
-        api_res = HTTP_SESSION.get(proxied_api, timeout=10)
-        if api_res.status_code == 200:
-            data = api_res.json()
-            # Ambil URL mp4 terbaik / hls
-            file_url = data.get('file') or data.get('url') or data.get('src')
-            title = data.get('title') or ""
-            logo = data.get('poster') or data.get('image') or ""
-
-            if file_url:
-                return file_url, title, logo
-    except Exception:
-        pass
-    return None, None, None
-
 def fetch_single_qazaqstan_cat(category):
     group_name = category["group"]
     target_url = category["url"]
-    default_genre = category.get("default_genre", "General")
-    default_type = category.get("default_type", "movie")
+    default_genre = category.get("default_genre", "Drama")
+    default_type = category.get("default_type", "series")
     entries = []
 
+    # Minta halaman kategori lewat Worker Proxy
     proxied_cat_url = f"{WORKER_PROXY}{quote(target_url, safe='')}"
 
     try:
         res = HTTP_SESSION.get(proxied_cat_url, timeout=12)
         if res.status_code == 200:
-            html_text = res.text
-            # Cari seluruh URL halaman video di dalam source code
-            vod_paths = re.findall(r'/(?:videos|serials|projects)/\d+', html_text)
-
+            soup = BeautifulSoup(res.text, 'html.parser')
+            
+            # Cari semua elemen tautan video/serial
             visited = set()
-            for path in vod_paths:
-                if path in visited: 
+            for a_tag in soup.find_all('a', href=True):
+                href = a_tag['href']
+                
+                # Filter hanya URL detail tayangan (menghindari link menu utama)
+                if not any(k in href for k in ['/videos/', '/projects/', '/serials/', '/episode/']):
                     continue
-                visited.add(path)
+                if href in visited or href in ["/serials", "/projects", "/documentaries"]:
+                    continue
 
-                full_page_url = urljoin("https://qazaqstan.tv", path)
+                full_page_url = href if href.startswith('http') else urljoin("https://qazaqstan.tv", href)
+                visited.add(href)
 
-                # Dapatkan berkas MP4 langsung dari API Player
-                direct_mp4, api_title, api_logo = extract_qazaqstan_media(full_page_url)
+                # Ambil Judul
+                title = a_tag.get_text(strip=True)
+                if not title or len(title) < 3:
+                    slug = href.rstrip('/').split('/')[-1]
+                    title = slug.replace('-', ' ').title()
 
-                if direct_mp4:
-                    title = api_title or path.split('/')[-1].replace('-', ' ').title()
-                    logo = api_logo or "https://qazaqstan.tv/assets/images/logo.png"
+                clean_title = re.sub(r'\s+', ' ', title).strip()
 
-                    # Bungkus URL MP4 dengan Cloudflare Worker untuk bypass referrer rtrk.kz
-                    stream_url = f"{WORKER_PROXY}{quote(direct_mp4, safe='')}"
-                    
-                    dominant_genre, content_type = detect_metadata(title, path, fallback_genre=default_genre, fallback_type=default_type)
+                # Ambil Gambar Poster
+                logo = "https://qazaqstan.tv/assets/images/logo.png"
+                img = a_tag.find('img')
+                if img and img.get('src'):
+                    logo = img['src']
+                    if not logo.startswith('http'):
+                        logo = urljoin("https://qazaqstan.tv", logo)
 
-                    meta = f'#EXTINF:-1 vod="1" type="{content_type}" content-type="{content_type}" tvg-logo="{logo}" group-title="{dominant_genre}",{title}'
-                    entries.append(meta)
-                    entries.append(stream_url)
-                    print(f"[SUCCESS QZ] {title} -> Genre: {dominant_genre} | Type: {content_type}")
+                # BUNGKUS URL HALAMAN DENGAN WORKER
+                # Worker nanti yang bertugas mengambil .mp4/.m3u8 saat diklik di OTT Navigator
+                stream_url = f"{WORKER_PROXY}{quote(full_page_url, safe='')}"
+
+                meta = f'#EXTINF:-1 vod="1" type="{default_type}" content-type="{default_type}" tvg-logo="{logo}" group-title="{default_genre}",{clean_title}'
+                entries.append(meta)
+                entries.append(stream_url)
+                print(f"[SUCCESS QZ] {clean_title}")
 
     except Exception as e:
         print(f"[ERROR QZ] Category [{group_name}]: {e}")
