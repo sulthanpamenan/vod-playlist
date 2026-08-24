@@ -2,8 +2,8 @@ name: Generate VOD Playlist
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Berjalan otomatis setiap 6 jam
-  workflow_dispatch: # Tombol manual trigger
+    - cron: '0 */6 * * *' 
+  workflow_dispatch:
 
 jobs:
   build:
