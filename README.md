@@ -1,6 +1,6 @@
 # 🎬 VOD Auto-Generated M3U Playlist
 
-[![Auto Refresh VOD Streams](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/update.yml/badge.svg)](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/update.yml)
+[![Auto Refresh VOD Streams](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/vod.yml/badge.svg)](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/vod.yml)
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Active-success?logo=github)](https://sulthanpamenan.github.io/vod-playlist/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Status](https://img.shields.io/badge/VOD%20Movies-Active-blue)](#-key-features)
