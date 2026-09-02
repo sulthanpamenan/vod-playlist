@@ -24,7 +24,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Generator Script
-        run: python generate.py
+        run: python generate_vod.py
 
       - name: Commit and Push Changes
         run: |
