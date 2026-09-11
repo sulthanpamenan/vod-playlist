@@ -107,7 +107,7 @@ async def process_series_item(context, item, idx, total, semaphore, file_lock):
             stream_url = format_dens_stream_url(captured_m3u8, c_id) + HEADERS_SUFFIX
             async with file_lock:
                 with open("playlist_series.m3u", "a", encoding="utf-8") as f:
-                    f.write(f'#EXTINF:-1 tvg-id="{c_id}" tvg-name="{title}" group-title="{item.get("genre", "Series")}" type="series",{title}\n')
+                    f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{c_id}" tvg-name="{title}" group-title="{item.get("genre", "Series")}",{title}\n')
                     f.write(f"{stream_url}\n\n")
             print(f"[{idx}/{total}] [✓ SUCCESS] [{item.get('genre', 'Series')}] {title} (ID: {c_id})")
             return True
