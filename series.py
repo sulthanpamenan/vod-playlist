@@ -107,7 +107,7 @@ async def process_series_item(context, item, idx, total, semaphore, file_lock):
             stream_url = format_dens_stream_url(captured_m3u8, c_id) + HEADERS_SUFFIX
             logo = item.get("logo", "")
             async with file_lock:
-                with open("playlist_series.m3u", "a", encoding="utf-8") as f:
+                with open("series.m3u", "a", encoding="utf-8") as f:
                     f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{c_id}" tvg-name="{title}" tvg-logo="{logo}" group-title="{item.get("genre", "Series")}",{title}\n')
                     f.write(f"{stream_url}\n\n")
             print(f"[{idx}/{total}] [✓ SUCCESS] [{item.get('genre', 'Series')}] {title} (ID: {c_id})")
@@ -213,7 +213,7 @@ async def main():
         ""
     ]
 
-    with open("playlist_series.m3u", "w", encoding="utf-8") as f:
+    with open("series.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(header_content) + "\n\n")
 
     async with async_playwright() as p:
@@ -237,7 +237,7 @@ async def main():
         await asyncio.gather(*tasks)
         await browser.close()
 
-    print("\n[SUCCESS] `playlist_series.m3u` successfully updated!")
+    print("\n[SUCCESS] `series.m3u` successfully updated!")
 
 if __name__ == "__main__":
     asyncio.run(main())
