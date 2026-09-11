@@ -105,9 +105,10 @@ async def process_series_item(context, item, idx, total, semaphore, file_lock):
 
         if captured_m3u8:
             stream_url = format_dens_stream_url(captured_m3u8, c_id) + HEADERS_SUFFIX
+            logo = item.get("logo", "")
             async with file_lock:
                 with open("playlist_series.m3u", "a", encoding="utf-8") as f:
-                    f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{c_id}" tvg-name="{title}" group-title="{item.get("genre", "Series")}",{title}\n')
+                    f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{c_id}" tvg-name="{title}" tvg-logo="{logo}" group-title="{item.get("genre", "Series")}",{title}\n')
                     f.write(f"{stream_url}\n\n")
             print(f"[{idx}/{total}] [✓ SUCCESS] [{item.get('genre', 'Series')}] {title} (ID: {c_id})")
             return True
@@ -137,10 +138,12 @@ async def collect_series_from_categories(page):
                     const href = a.href || '';
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
-                    if (!title && a.querySelector('img')) title = a.querySelector('img').alt || '';
+                    const img = a.querySelector('img');
+                    let logo = img ? (img.src || img.getAttribute('data-src') || '') : '';
+                    if (!title && img) title = img.alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
                     if (match && title && !title.toLowerCase().includes('watch')) {
-                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href });
+                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
                     }
                 });
                 return results;
@@ -169,10 +172,12 @@ async def collect_series_from_categories(page):
                     const href = a.href || '';
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
-                    if (!title && a.querySelector('img')) title = a.querySelector('img').alt || '';
+                    const img = a.querySelector('img');
+                    let logo = img ? (img.src || img.getAttribute('data-src') || '') : '';
+                    if (!title && img) title = img.alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
                     if (match && title && !title.toLowerCase().includes('watch')) {
-                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href });
+                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
                     }
                 });
                 return results;
@@ -181,6 +186,8 @@ async def collect_series_from_categories(page):
             for ep in episodes:
                 if ep["id"] not in unique_items:
                     ep["genre"] = parent["genre"]
+                    if not ep.get("logo"):
+                        ep["logo"] = parent.get("logo", "")
                     unique_items[ep["id"]] = ep
 
         except Exception:
@@ -195,7 +202,7 @@ async def main():
 
     header_content = [
         "#EXTM3U",
-        "<!--more-->", "<html>", "<head>", '<meta charset="utf-8">',
+        "", "<html>", "<head>", '<meta charset="utf-8">',
         '<meta http-equiv="X-UA-Compatible" content="IE=edge">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<script language=\"javascript\">",
