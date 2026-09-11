@@ -45,8 +45,6 @@ def format_dens_stream_url(intercepted_url, content_id):
 async def process_series_item(context, item, idx, total, semaphore, file_lock):
     async with semaphore:
         page = await context.new_page()
-        await page.route("**/*.{png,jpg,jpeg,svg,gif,css,woff,woff2}", lambda route: route.abort())
-
         c_id = item["id"]
         title = item["title"]
         direct_url = item.get("url")
@@ -124,12 +122,12 @@ async def collect_series_from_categories(page):
     for cat in CATEGORIES_SERIES:
         try:
             await page.goto(cat["url"], wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(800)
+            await page.wait_for_timeout(1000)
 
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
-            await page.wait_for_timeout(400)
+            await page.wait_for_timeout(500)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await page.wait_for_timeout(600)
+            await page.wait_for_timeout(800)
 
             items = await page.evaluate("""() => {
                 const results = [];
@@ -139,7 +137,10 @@ async def collect_series_from_categories(page):
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
                     const img = a.querySelector('img');
-                    let logo = img ? (img.src || img.getAttribute('data-src') || '') : '';
+                    let logo = '';
+                    if (img) {
+                        logo = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                    }
                     if (!title && img) title = img.alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
                     if (match && title && !title.toLowerCase().includes('watch')) {
@@ -173,7 +174,10 @@ async def collect_series_from_categories(page):
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
                     const img = a.querySelector('img');
-                    let logo = img ? (img.src || img.getAttribute('data-src') || '') : '';
+                    let logo = '';
+                    if (img) {
+                        logo = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                    }
                     if (!title && img) title = img.alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
                     if (match && title && !title.toLowerCase().includes('watch')) {
@@ -223,7 +227,6 @@ async def main():
             ignore_https_errors=True
         )
         page = await context.new_page()
-        await page.route("**/*.{png,jpg,jpeg,svg,gif,css,woff,woff2}", lambda route: route.abort())
         series_list = await collect_series_from_categories(page)
         await page.close()
 
