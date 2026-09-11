@@ -154,7 +154,7 @@ async def process_movie_item(context, item, idx, total, semaphore, file_lock):
             stream_url = format_dens_stream_url(captured_m3u8, c_id) + HEADERS_SUFFIX
             logo = item.get("logo", "")
             async with file_lock:
-                with open("playlist_movies.m3u", "a", encoding="utf-8") as f:
+                with open("movies.m3u", "a", encoding="utf-8") as f:
                     f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{c_id}" tvg-name="{title}" tvg-logo="{logo}" group-title="{item.get("genre", "Movies")}",{title}\n')
                     f.write(f"{stream_url}\n\n")
             print(f"[{idx}/{total}] [✓ SUCCESS] [{item.get('genre', 'Movie')}] {title} (ID: {c_id})")
@@ -223,7 +223,7 @@ async def main():
         ""
     ]
 
-    with open("playlist_movies.m3u", "w", encoding="utf-8") as f:
+    with open("movies.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(header_content) + "\n\n")
 
     print("--- Processing Dailymotion Movies ---")
@@ -233,7 +233,7 @@ async def main():
             if res:
                 dm_results.append(res)
 
-    with open("playlist_movies.m3u", "a", encoding="utf-8") as f:
+    with open("movies.m3u", "a", encoding="utf-8") as f:
         for entry in dm_results:
             f.write(entry + "\n\n")
 
@@ -259,7 +259,7 @@ async def main():
         await asyncio.gather(*tasks)
         await browser.close()
 
-    print("\n[SUCCESS] `playlist_movies.m3u` successfully updated!")
+    print("\n[SUCCESS] `movies.m3u` successfully updated!")
 
 if __name__ == "__main__":
     asyncio.run(main())
