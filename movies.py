@@ -163,7 +163,7 @@ async def process_movie_item(context, item, idx, total, semaphore, file_lock):
             return False
 
 async def collect_movies_from_genres(page):
-    print(f"[*] Mengumpulkan film dari {len(GENRES_MOVIE)} Genre...")
+    print(f"[*] Collecting movies from {len(GENRES_MOVIE)} genres...")
     unique_movies = {}
 
     for g_idx, genre in enumerate(GENRES_MOVIE, 1):
@@ -198,13 +198,13 @@ async def collect_movies_from_genres(page):
                     unique_movies[m["id"]] = m
 
         except Exception as e:
-            print(f"    [!] Gagal memuat genre {genre['name']}: {e}")
+            print(f"    [!] Failed to load genre {genre['name']}: {e}")
 
     return list(unique_movies.values())
 
 async def main():
     print("==================================================")
-    print("[MOVIE GENERATOR] Memulai Proses Massal...")
+    print("[MOVIE GENERATOR] Starting the Bulk Process...")
     print("==================================================")
 
     header_content = [
@@ -256,7 +256,7 @@ async def main():
         await asyncio.gather(*tasks)
         await browser.close()
 
-    print("\n[SUCCESS] `playlist_movies.m3u` berhasil diperbarui!")
+    print("\n[SUCCESS] `playlist_movies.m3u` successfully updated!")
 
 if __name__ == "__main__":
     asyncio.run(main())
