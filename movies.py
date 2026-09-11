@@ -152,10 +152,11 @@ async def process_movie_item(context, item, idx, total, semaphore, file_lock):
 
         if captured_m3u8:
             stream_url = format_dens_stream_url(captured_m3u8, c_id) + HEADERS_SUFFIX
-            async with file_lock:
-                with open("playlist_movies.m3u", "a", encoding="utf-8") as f:
-                    f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{c_id}" tvg-name="{title}" group-title="{item.get("genre", "Movies")}",{title}\n')
-                    f.write(f"{stream_url}\n\n")
+            logo = item.get("logo", "")
+                async with file_lock:
+                    with open("playlist_movies.m3u", "a", encoding="utf-8") as f:
+                        f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{c_id}" tvg-name="{title}" tvg-logo="{logo}" group-title="{item.get("genre", "Movies")}",{title}\n')
+                        f.write(f"{stream_url}\n\n")
             print(f"[{idx}/{total}] [✓ SUCCESS] [{item.get('genre', 'Movie')}] {title} (ID: {c_id})")
             return True
         else:
