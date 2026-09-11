@@ -163,7 +163,7 @@ async def process_movie_item(context, item, idx, total, semaphore, file_lock):
             return False
 
 async def collect_movies_from_genres(page):
-    print(f"[*] Collecting movies from {len(GENRES_MOVIE)} genres...")
+    print(f"[*] Mengumpulkan film dari {len(GENRES_MOVIE)} Genre...")
     unique_movies = {}
 
     for g_idx, genre in enumerate(GENRES_MOVIE, 1):
@@ -183,10 +183,12 @@ async def collect_movies_from_genres(page):
                     const href = a.href || '';
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
-                    if (!title && a.querySelector('img')) title = a.querySelector('img').alt || '';
+                    const img = a.querySelector('img');
+                    let logo = img ? (img.src || img.getAttribute('data-src') || '') : '';
+                    if (!title && img) title = img.alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
                     if (match && title && !title.toLowerCase().includes('watch')) {
-                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href });
+                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
                     }
                 });
                 return results;
@@ -198,7 +200,7 @@ async def collect_movies_from_genres(page):
                     unique_movies[m["id"]] = m
 
         except Exception as e:
-            print(f"    [!] Failed to load genre {genre['name']}: {e}")
+            print(f"    [!] Gagal memuat genre {genre['name']}: {e}")
 
     return list(unique_movies.values())
 
