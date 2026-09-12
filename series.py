@@ -24,7 +24,6 @@ CATEGORIES = [
     {"name": "Sports & Hobbies", "id": "1118", "slug": "sports-and-hobbies"},
 ]
 
-# HTTP Adapter untuk Connection Pooling tingkat tinggi
 SESSION = requests.Session()
 SESSION.verify = False
 adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
@@ -75,14 +74,8 @@ def get_series_by_category(cat_id, cat_slug):
             break
     return all_series
 
-def get_episodes_by_series(series_info):
-    """Take all Episodes from the Parent Series (Optimized for Multi-threading)"""
-    series_id = series_info.get("movie_id")
-    series_slug = series_info.get("slug")
-    
-    if not series_id or not series_slug:
-        return []
-
+def get_episodes_by_series(series_id, series_slug):
+    """Take all Episodes from the Parent Series with automatic pagination"""
     all_episodes = []
     page = 1
     while True:
@@ -100,12 +93,11 @@ def get_episodes_by_series(series_info):
         except Exception as e:
             print(f"    [!] Failed to retrieve episodes page {page} for series {series_id}: {e}")
             break
-
-    return all_episodes if all_episodes else [series_info]
+    return all_episodes
 
 def main():
     print("==================================================")
-    print("[DENS.TV PURE SCRAPER API] Starting Ultimate Extraction...")
+    print("[DENS.TV PURE SCRAPER API] Starting Fixed Extraction...")
     print("==================================================")
 
     header_content = [
@@ -125,30 +117,40 @@ def main():
         f.write("\n".join(header_content) + "\n\n")
 
     unique_episodes = {}
-    series_cache = {}  # Cache lokal episode berdasarkan series_id
+    series_cache = {}
 
     for cat in CATEGORIES:
         print(f"[*] Fetching Kategori: {cat['name']}...")
         series_list = get_series_by_category(cat["id"], cat["slug"])
         
-        # Pisahkan serial mana yang belum pernah di-fetch episode-nya
         uncached_series = [s for s in series_list if s.get("movie_id") and s.get("movie_id") not in series_cache]
         
-        # Tarik episode secara paralel HANYA untuk serial yang belum ada di cache
         if uncached_series:
-            with ThreadPoolExecutor(max_workers=8) as executor:
-                future_to_parent = {executor.submit(get_episodes_by_series, parent): parent for parent in uncached_series}
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                future_to_parent = {
+                    executor.submit(get_episodes_by_series, s["movie_id"], s["slug"]): s["movie_id"] 
+                    for s in uncached_series if s.get("movie_id") and s.get("slug")
+                }
                 for future in as_completed(future_to_parent):
-                    parent = future_to_parent[future]
-                    p_id = parent.get("movie_id")
-                    if p_id:
-                        series_cache[p_id] = future.result()
+                    s_id = future_to_parent[future]
+                    try:
+                        res = future.result()
+                        series_cache[s_id] = res if res else []
+                    except Exception:
+                        series_cache[s_id] = []
 
-        # Proses pembuatan objek episode untuk kategori ini
         for parent in series_list:
             p_id = parent.get("movie_id")
             p_title = parent.get("title", "")
-            episodes = series_cache.get(p_id, [parent])
+            if not p_id:
+                continue
+
+            episodes = series_cache.get(p_id, [])
+            
+            if not episodes:
+                raw_parent_stream = parent.get("extra", {}).get("stream", {}).get("play_url", "") or parent.get("file", "")
+                if raw_parent_stream:
+                    episodes = [parent]
 
             for ep in episodes:
                 ep_id = ep.get("movie_id")
@@ -163,25 +165,25 @@ def main():
                     if not poster:
                         poster = ep.get("image", "")
 
-                    unique_episodes[ep_id] = {
-                        "id": ep_id,
-                        "title": ep.get("title", p_title),
-                        "poster": poster,
-                        "genre": cat["name"],
-                        "stream": formatted_stream + HEADERS_SUFFIX if formatted_stream else ""
-                    }
+                    if formatted_stream:
+                        unique_episodes[ep_id] = {
+                            "id": ep_id,
+                            "title": ep.get("title", p_title),
+                            "poster": poster,
+                            "genre": cat["name"],
+                            "stream": formatted_stream + HEADERS_SUFFIX
+                        }
 
-    print(f"\n[✓] A total of {len(unique_episodes)} episodes successfully extracted!")
+    print(f"\n[✓] A total of {len(unique_episodes)} episodes were successfully extracted!")
     print("==================================================")
 
     count = 0
     with open("series.m3u", "a", encoding="utf-8") as f:
         for ep_id, data in unique_episodes.items():
-            if data["stream"]:
-                f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
-                f.write(f'{data["stream"]}\n\n')
-                count += 1
-                print(f"[{count}/{len(unique_episodes)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
+            f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+            f.write(f'{data["stream"]}\n\n')
+            count += 1
+            print(f"[{count}/{len(unique_episodes)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
 
     print("\n==================================================")
     print(f"[COMPLETED] {count} episodes successfully saved to series.m3u")
