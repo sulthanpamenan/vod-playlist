@@ -92,6 +92,8 @@ def format_dens_stream_url(intercepted_url, content_id):
 async def process_movie_item(context, item, idx, total, semaphore, file_lock):
     async with semaphore:
         page = await context.new_page()
+        await page.route("**/*.{png,jpg,jpeg,svg,gif,css,woff,woff2}", lambda route: route.abort())
+
         c_id = item["id"]
         title = item["title"]
         direct_url = item.get("url")
@@ -167,7 +169,7 @@ async def collect_movies_from_genres(page):
 
     for g_idx, genre in enumerate(GENRES_MOVIE, 1):
         try:
-            await page.goto(genre["url"], wait_until="networkidle", timeout=20000)
+            await page.goto(genre["url"], wait_until="domcontentloaded", timeout=15000)
             await page.wait_for_timeout(1000)
 
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
@@ -183,7 +185,6 @@ async def collect_movies_from_genres(page):
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
                     
-                    # Mencari URL poster asli dari tag img maupun background-image
                     let logo = '';
                     const imgs = Array.from(a.querySelectorAll('img')).concat(Array.from(a.parentElement.querySelectorAll('img')));
                     for (let img of imgs) {
@@ -191,14 +192,6 @@ async def collect_movies_from_genres(page):
                         if (src && !src.includes('play-circle') && !src.includes('svg')) {
                             logo = src;
                             break;
-                        }
-                    }
-                    if (!logo) {
-                        const bgElem = a.querySelector('[style*="background"]') || a;
-                        const bgStyle = bgElem.style.backgroundImage || '';
-                        const bgMatch = bgStyle.match(/url\\(["']?(.*?)["']?\\)/);
-                        if (bgMatch && !bgMatch[1].includes('play-circle') && !bgMatch[1].includes('svg')) {
-                            logo = bgMatch[1];
                         }
                     }
 
