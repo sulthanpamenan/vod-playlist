@@ -31,33 +31,21 @@ async def test_single_series():
         )
         page = await context.new_page()
 
-        # Gunakan URL Genre TV/Series Dens.tv yang aktif
-        print("[*] Navigating to Series page...")
-        await page.goto("https://www.dens.tv/movie/genre/5501/cerita-indonesia", wait_until="domcontentloaded", timeout=20000)
-        await page.wait_for_timeout(2000)
-
-        await page.evaluate("window.scrollTo(0, 400);")
+        # Buka Halaman Kategori Series Resmi
+        print("[*] Navigating to Series Category page...")
+        await page.goto("https://www.dens.tv/movie/category/1113/series", wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(1000)
 
+        # Ambil link nonton yang valid (bukan link genre-list)
         series = await page.evaluate("""() => {
-            const links = Array.from(document.querySelectorAll('a[href*="/watch/"], a[href*="/movie/"]'));
+            const links = Array.from(document.querySelectorAll('a[href*="/movie/watch/"], a[href*="/watch/"]'));
             for (let a of links) {
                 const href = a.href || '';
-                const match = href.match(/\\/(\\d+)(?:\\/|$)/);
+                const match = href.match(/\\/watch\\/(\\d+)/);
                 let title = a.innerText ? a.innerText.trim() : (a.getAttribute('title') || '');
 
-                if (match && title && !title.toLowerCase().includes('watch')) {
-                    let logo = '';
-                    const container = a.closest('.movie-box') || a.parentElement || a;
-                    const imgs = Array.from(container.querySelectorAll('img'));
-                    for (let img of imgs) {
-                        let src = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
-                        if (src && !src.includes('play-circle') && !src.includes('svg')) {
-                            logo = src;
-                            break;
-                        }
-                    }
-                    return { id: match[1], title: title, url: href, logo: logo };
+                if (match && title && !href.includes('/genre-list/')) {
+                    return { id: match[1], title: title, url: href };
                 }
             }
             return null;
@@ -66,9 +54,11 @@ async def test_single_series():
         print(f"[*] Found Series Item: {series}")
 
         if not series or not series["id"]:
-            print("[X TEST FAILED] Serial tidak ditemukan di halaman!")
+            print("[X TEST FAILED] Serial tidak ditemukan di halaman kategori!")
             await browser.close()
             return
+
+        poster_potret = f"https://www.dens.tv/images/poster/potrait/{series['id']}.jpg"
 
         captured_m3u8 = None
         def handle_request(req):
@@ -83,7 +73,7 @@ async def test_single_series():
         for _ in range(5):
             if captured_m3u8:
                 break
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(800)
             await page.evaluate("""() => {
                 let playBtn = document.querySelector('.vjs-big-play-button') || document.querySelector('video');
                 if (playBtn) playBtn.click();
@@ -94,10 +84,10 @@ async def test_single_series():
         if captured_m3u8:
             final_stream = format_dens_stream_url(captured_m3u8, series["id"]) + HEADERS_SUFFIX
             print("\n================ RESULT TEST SERIES ================")
-            print(f'#EXTINF:-1 vod="1" tvg-id="{series["id"]}" tvg-name="{series["title"]}" tvg-logo="{series["logo"]}",{series["title"]}')
+            print(f'#EXTINF:-1 vod="1" tvg-id="{series["id"]}" tvg-name="{series["title"]}" tvg-logo="{poster_potret}",{series["title"]}')
             print(f"{final_stream}")
             print("====================================================\n")
-            print("[✓ TEST PASSED] Series berhasil ditarik!")
+            print("[✓ TEST PASSED] Series & Poster Potret Berhasil!")
         else:
             print("[X TEST FAILED] Stream M3U8 Series tidak tertangkap!")
 
