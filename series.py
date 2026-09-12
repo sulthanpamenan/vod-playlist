@@ -121,7 +121,7 @@ async def collect_series_from_categories(page):
 
     for cat in CATEGORIES_SERIES:
         try:
-            await page.goto(cat["url"], wait_until="domcontentloaded", timeout=15000)
+            await page.goto(cat["url"], wait_until="networkidle", timeout=20000)
             await page.wait_for_timeout(1000)
 
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
@@ -131,19 +131,30 @@ async def collect_series_from_categories(page):
 
             items = await page.evaluate("""() => {
                 const results = [];
-                const links = document.querySelectorAll('a[href*="/watch/"]');
+                # Menangkap tautan watch / movie / episode
+                const links = document.querySelectorAll('a[href*="/watch/"], a[href*="/movie/"]');
                 links.forEach(a => {
                     const href = a.href || '';
-                    const match = href.match(/\\/watch\\/(\\d+)/);
+                    const match = href.match(/\\/(\\d+)(?:\\/|$)/);
                     let title = a.innerText ? a.innerText.trim() : '';
-                    const img = a.querySelector('img');
+                    
                     let logo = '';
-                    if (img) {
-                        logo = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                    const imgs = Array.from(a.querySelectorAll('img')).concat(Array.from(a.parentElement.querySelectorAll('img')));
+                    for (let img of imgs) {
+                        let src = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                        if (src && !src.includes('play-circle') && !src.includes('svg')) {
+                            logo = src;
+                            break;
+                        }
                     }
-                    if (!title && img) title = img.alt || '';
+
+                    if (!title) {
+                        const img = a.querySelector('img');
+                        if (img) title = img.alt || '';
+                    }
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
-                    if (match && title && !title.toLowerCase().includes('watch')) {
+
+                    if (match && title && !title.toLowerCase().includes('watch') && href.includes('/watch/')) {
                         results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
                     }
                 });
@@ -173,13 +184,14 @@ async def collect_series_from_categories(page):
                     const href = a.href || '';
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
-                    const img = a.querySelector('img');
+                    
                     let logo = '';
-                    if (img) {
-                        logo = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
-                    }
+                    const img = a.querySelector('img');
+                    if (img) logo = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+
                     if (!title && img) title = img.alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
+
                     if (match && title && !title.toLowerCase().includes('watch')) {
                         results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
                     }
@@ -190,7 +202,7 @@ async def collect_series_from_categories(page):
             for ep in episodes:
                 if ep["id"] not in unique_items:
                     ep["genre"] = parent["genre"]
-                    if not ep.get("logo"):
+                    if not ep.get("logo") or "svg" in ep.get("logo", ""):
                         ep["logo"] = parent.get("logo", "")
                     unique_items[ep["id"]] = ep
 
