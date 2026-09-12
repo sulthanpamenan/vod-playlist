@@ -31,12 +31,14 @@ async def test_single_series():
         )
         page = await context.new_page()
 
-        # 1. Buka 1 Halaman Kategori Series (Series Utama)
-        print("[*] Navigating to Series Category page...")
-        await page.goto("https://www.dens.tv/movie/category/1113/series", wait_until="domcontentloaded", timeout=20000)
+        # Gunakan URL Genre TV/Series Dens.tv yang aktif
+        print("[*] Navigating to Series page...")
+        await page.goto("https://www.dens.tv/movie/genre/5501/cerita-indonesia", wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(2000)
 
-        # 2. Cari Semua Tautan dan Ambil 1 Item Pertama
+        await page.evaluate("window.scrollTo(0, 400);")
+        await page.wait_for_timeout(1000)
+
         series = await page.evaluate("""() => {
             const links = Array.from(document.querySelectorAll('a[href*="/watch/"], a[href*="/movie/"]'));
             for (let a of links) {
@@ -44,12 +46,16 @@ async def test_single_series():
                 const match = href.match(/\\/(\\d+)(?:\\/|$)/);
                 let title = a.innerText ? a.innerText.trim() : (a.getAttribute('title') || '');
 
-                if (match && title && href.includes('/watch/')) {
-                    const container = a.closest('.movie-box') || a.parentElement || a;
-                    const img = container.querySelector('img');
+                if (match && title && !title.toLowerCase().includes('watch')) {
                     let logo = '';
-                    if (img) {
-                        logo = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                    const container = a.closest('.movie-box') || a.parentElement || a;
+                    const imgs = Array.from(container.querySelectorAll('img'));
+                    for (let img of imgs) {
+                        let src = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                        if (src && !src.includes('play-circle') && !src.includes('svg')) {
+                            logo = src;
+                            break;
+                        }
                     }
                     return { id: match[1], title: title, url: href, logo: logo };
                 }
@@ -60,11 +66,10 @@ async def test_single_series():
         print(f"[*] Found Series Item: {series}")
 
         if not series or not series["id"]:
-            print("[X TEST FAILED] Serial tidak ditemukan di halaman kategori!")
+            print("[X TEST FAILED] Serial tidak ditemukan di halaman!")
             await browser.close()
             return
 
-        # 3. Tangkap Stream M3U8
         captured_m3u8 = None
         def handle_request(req):
             nonlocal captured_m3u8
