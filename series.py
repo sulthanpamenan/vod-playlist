@@ -62,7 +62,8 @@ def get_series_by_category(cat_id, cat_slug):
         try:
             res = SESSION.get(url, timeout=10)
             if res.status_code == 200:
-                series = res.json().get("data", {}).get("series", [])
+                data = res.json().get("data", {})
+                series = data.get("movies", []) or data.get("series", [])
                 if not series:
                     break
                 all_series.extend(series)
@@ -122,14 +123,15 @@ def main():
     for cat in CATEGORIES:
         print(f"[*] Fetching Kategori: {cat['name']}...")
         series_list = get_series_by_category(cat["id"], cat["slug"])
+        print(f"    Found {len(series_list)} items in category {cat['name']}")
         
         uncached_series = [s for s in series_list if s.get("movie_id") and s.get("movie_id") not in series_cache]
         
         if uncached_series:
             with ThreadPoolExecutor(max_workers=5) as executor:
                 future_to_parent = {
-                    executor.submit(get_episodes_by_series, s["movie_id"], s["slug"]): s["movie_id"] 
-                    for s in uncached_series if s.get("movie_id") and s.get("slug")
+                    executor.submit(get_episodes_by_series, s["movie_id"], s.get("slug", "")): s["movie_id"] 
+                    for s in uncached_series if s.get("movie_id")
                 }
                 for future in as_completed(future_to_parent):
                     s_id = future_to_parent[future]
@@ -148,9 +150,7 @@ def main():
             episodes = series_cache.get(p_id, [])
             
             if not episodes:
-                raw_parent_stream = parent.get("extra", {}).get("stream", {}).get("play_url", "") or parent.get("file", "")
-                if raw_parent_stream:
-                    episodes = [parent]
+                episodes = [parent]
 
             for ep in episodes:
                 ep_id = ep.get("movie_id")
