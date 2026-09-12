@@ -167,7 +167,7 @@ async def collect_movies_from_genres(page):
 
     for g_idx, genre in enumerate(GENRES_MOVIE, 1):
         try:
-            await page.goto(genre["url"], wait_until="domcontentloaded", timeout=15000)
+            await page.goto(genre["url"], wait_until="networkidle", timeout=20000)
             await page.wait_for_timeout(1000)
 
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
@@ -182,13 +182,32 @@ async def collect_movies_from_genres(page):
                     const href = a.href || '';
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
-                    const img = a.querySelector('img');
+                    
+                    # Mencari URL poster asli dari tag img maupun background-image
                     let logo = '';
-                    if (img) {
-                        logo = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                    const imgs = Array.from(a.querySelectorAll('img')).concat(Array.from(a.parentElement.querySelectorAll('img')));
+                    for (let img of imgs) {
+                        let src = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                        if (src && !src.includes('play-circle') && !src.includes('svg')) {
+                            logo = src;
+                            break;
+                        }
                     }
-                    if (!title && img) title = img.alt || '';
+                    if (!logo) {
+                        const bgElem = a.querySelector('[style*="background"]') || a;
+                        const bgStyle = bgElem.style.backgroundImage || '';
+                        const bgMatch = bgStyle.match(/url\\(["']?(.*?)["']?\\)/);
+                        if (bgMatch && !bgMatch[1].includes('play-circle') && !bgMatch[1].includes('svg')) {
+                            logo = bgMatch[1];
+                        }
+                    }
+
+                    if (!title) {
+                        const img = a.querySelector('img');
+                        if (img) title = img.alt || '';
+                    }
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
+
                     if (match && title && !title.toLowerCase().includes('watch')) {
                         results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
                     }
