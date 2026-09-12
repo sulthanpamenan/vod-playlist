@@ -1,49 +1,48 @@
 # 🎬 VOD Auto-Generated M3U Playlist
 
-[![Auto Refresh VOD Streams](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/vod.yml/badge.svg)](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/vod.yml)
+[![Generate Movies Playlist](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/movies.yml/badge.svg)](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/movies.yml)
+[![Generate Series Playlist](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/series.yml/badge.svg)](https://github.com/sulthanpamenan/vod-playlist/actions/workflows/series.yml)
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Active-success?logo=github)](https://sulthanpamenan.github.io/vod-playlist/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status](https://img.shields.io/badge/VOD%20Movies-Active-blue)](#-key-features)
 
-An automated M3U playlist generator designed for Video On Demand (VOD) content and movies. Built for seamless media player integration, it automatically updates and maintains valid stream tokens for optimized playback across modern IPTV applications.
+An automated M3U playlist generator designed for Video On Demand (VOD) content (Movies & TV Series). It automatically extracts media catalogs and updates stream tokens to ensure optimized playback across modern IPTV applications.
 
 ---
 
 ## 🔗 Live URLs
 
-Import this link directly into your preferred IPTV player (TiviMate, OTT Navigator, Televizo, VLC, etc.):
+Import these links directly into your preferred IPTV player (TiviMate, OTT Navigator, Televizo, VLC, etc.):
 
-| Content | URL | Description |
+| Content | Primary URL (GitHub Pages) | Alternative Raw URL |
 | :--- | :--- | :--- |
-| **Playlist (M3U)** | `https://sulthanpamenan.github.io/vod-playlist/playlist.m3u` | Auto-updated M3U playlist with valid stream links |
-
-*(Alternative Raw URL if not using GitHub Pages):*
-`https://raw.githubusercontent.com/sulthanpamenan/vod-playlist/main/playlist.m3u`
+| **Movies Playlist** | `https://sulthanpamenan.github.io/vod-playlist/movies.m3u` | `https://raw.githubusercontent.com/sulthanpamenan/vod-playlist/main/movies.m3u` |
+| **Series Playlist** | `https://sulthanpamenan.github.io/vod-playlist/series.m3u` | `https://raw.githubusercontent.com/sulthanpamenan/vod-playlist/main/series.m3u` |
 
 ---
 
 ## ✨ Key Features
 
-- **Automated Stream Maintenance:** Background updating via GitHub Actions to ensure stream token validity and minimize broken links.
-- **Dynamic Catalog Management:** Continuously parses and updates media sources to deliver structured VOD streams.
-- **Rich Metadata Integration:** Built-in metadata support including movie titles, poster artwork, content types, and genre tags.
-- **Universal Compatibility:** Standardized M3U formatting compatible with all major IPTV players and media applications.
+- **Automated Stream Maintenance:** Regularly refreshes stream tokens via scheduled GitHub Actions to prevent broken links.
+- **Separated Catalogs:** Dedicated playlists for **Movies** and **TV Series** for clean category organization in IPTV apps.
+- **Rich Metadata Support:** Pre-configured with poster artwork (`tvg-logo`), content IDs, titles, VOD flags (`vod="1"`), and group tags.
+- **Universal Compatibility:** Standardized M3U/M3U8 format supported by all major IPTV players and media applications.
 
 ---
 
 ## 🚀 Quick Setup Guide
 
-1. Open your IPTV application (e.g., **OTT Navigator**, **TiviMate**, or **Televizo**).
-2. Add a new **M3U Playlist** and enter the playlist URL:
-   `https://sulthanpamenan.github.io/vod-playlist/playlist.m3u`
-3. *(For OTT Navigator)* If the content appears under Live TV, navigate to **Playlist Settings** > **Content/Playlist Type** and change it to **VOD (Movies)**.
-4. Refresh the provider to load the catalog.
+1. Open your IPTV application (e.g., **TiviMate**, **OTT Navigator**, or **Televizo**).
+2. Add a new **M3U Playlist** and enter the corresponding URL:
+   - For Movies: `https://sulthanpamenan.github.io/vod-playlist/movies.m3u`
+   - For Series: `https://sulthanpamenan.github.io/vod-playlist/series.m3u`
+3. *(For OTT Navigator)* If content appears under Live TV, go to **Playlist Settings** > **Content/Playlist Type** and change it to **VOD (Movies/Series)**.
+4. Refresh the provider to load the full catalog.
 
 ---
 
 ## ⚠️ Disclaimer
 
-This repository is developed for educational and personal automation purposes only. No video files or media streams are hosted on this server. All playlist entries reference public third-party endpoints.
+This repository is developed for educational and personal automation purposes only. No video files or media content are hosted on this server. All playlist entries reference public third-party endpoints.
 
 ---
 
@@ -55,14 +54,14 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## ☕ Support the Developer
 
-If this project is helpful to you, consider supporting its maintenance and development!
+If this project helps you keep your VOD playlists up to date, consider supporting its maintenance!
 
 <div align="center">
 
 ### 🇮🇩 Local Donation (QRIS / E-Wallet / Mobile Banking)
 
 <a href="https://saweria.co/sulthanpamenan" target="_blank">
-  <img width="290" height="290" alt="Saweria" src="https://github.com/user-attachments/assets/f2846d1f-a391-4daf-9ce5-a48aadc992a0" />
+  <img width="290" height="290" alt="Saweria QRIS" src="https://github.com/user-attachments/assets/f2846d1f-a391-4daf-9ce5-a48aadc992a0" />
 </a>
 
 <br>
