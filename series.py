@@ -124,12 +124,12 @@ async def collect_series_from_categories(page):
     for cat in CATEGORIES_SERIES:
         try:
             await page.goto(cat["url"], wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(1200)
+            await page.wait_for_timeout(1500)
 
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
             await page.wait_for_timeout(500)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await page.wait_for_timeout(800)
+            await page.wait_for_timeout(1000)
 
             items = await page.evaluate("""() => {
                 const results = [];
