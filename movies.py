@@ -1,6 +1,5 @@
-import asyncio
 import re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
 import requests
 import streamlink
@@ -53,11 +52,17 @@ GENRES_MOVIE = [
     {"name": "Others", "id": "4559", "slug": "others"},
 ]
 
-HTTP_HEADERS = {
+SESSION = requests.Session()
+SESSION.verify = False
+adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+SESSION.mount("https://", adapter)
+SESSION.mount("http://", adapter)
+
+SESSION.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     "Referer": "https://www.dens.tv/",
     "Accept": "*/*"
-}
+})
 
 SL_SESSION = streamlink.Streamlink()
 SL_SESSION.set_option("http-headers", {
@@ -93,20 +98,37 @@ def process_dailymotion_item(item):
         print(f"[ERROR DM] {item['title']}: {e}")
     return None
 
-def get_movies_by_genre(genre_id, genre_slug):
-    """Retrieve the movie list from the Dens.tv API"""
-    url = f"https://www.dens.tv/movie/related/{genre_id}/{genre_slug}?page=1&limit=50&json=true"
-    try:
-        res = requests.get(url, headers=HTTP_HEADERS, timeout=10, verify=False)
-        if res.status_code == 200:
-            return res.json().get("data", {}).get("movies", [])
-    except Exception as e:
-        print(f"    [!] Failed to retrieve genre {genre_slug}: {e}")
-    return []
+def get_movies_by_genre(genre_info):
+    """Retrieve all movies from a genre with automatic pagination and multi-key fallback"""
+    genre_id = genre_info["id"]
+    genre_slug = genre_info["slug"]
+    genre_name = genre_info["name"]
+    
+    all_movies = []
+    page = 1
+    while True:
+        url = f"https://www.dens.tv/movie/related/{genre_id}/{genre_slug}?page={page}&limit=50&json=true"
+        try:
+            res = SESSION.get(url, timeout=10)
+            if res.status_code == 200:
+                data = res.json().get("data", {})
+                movies = data.get("movies", []) or data.get("series", [])
+                if not movies:
+                    break
+                for m in movies:
+                    m["_genre_name"] = genre_name
+                all_movies.extend(movies)
+                page += 1
+            else:
+                break
+        except Exception as e:
+            print(f"    [!] Failed to fetch page {page} for genre {genre_slug}: {e}")
+            break
+    return all_movies
 
 def main():
     print("==================================================")
-    print("[PURE MOVIE GENERATOR API] Starting Data Extraction...")
+    print("[PURE MOVIE GENERATOR API] Starting Ultimate Extraction...")
     print("==================================================")
 
     header_content = [
@@ -136,33 +158,41 @@ def main():
         for entry in dm_results:
             f.write(entry + "\n\n")
 
-    print("\n--- Processing Dens.tv Movies via API ---")
+    print("\n--- Processing Dens.tv Movies via API (Parallel) ---")
     unique_movies = {}
 
-    for genre in GENRES_MOVIE:
-        print(f"[*] Fetching Genre: {genre['name']}...")
-        movies = get_movies_by_genre(genre["id"], genre["slug"])
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_genre = {executor.submit(get_movies_by_genre, g): g for g in GENRES_MOVIE}
         
-        for m in movies:
-            m_id = m.get("movie_id")
-            if m_id and m_id not in unique_movies:
-                raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "")
-                if not raw_stream:
-                    raw_stream = m.get("file", "")
-
-                formatted_stream = format_stream_url(raw_stream, m_id)
+        for future in as_completed(future_to_genre):
+            genre = future_to_genre[future]
+            try:
+                movies = future.result()
+                print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
                 
-                poster = m.get("url_handle", {}).get("img_port_large", "")
-                if not poster:
-                    poster = m.get("image", "")
+                for m in movies:
+                    m_id = m.get("movie_id")
+                    if m_id and m_id not in unique_movies:
+                        raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "")
+                        if not raw_stream:
+                            raw_stream = m.get("file", "")
 
-                unique_movies[m_id] = {
-                    "id": m_id,
-                    "title": m.get("title", ""),
-                    "poster": poster,
-                    "genre": genre["name"],
-                    "stream": formatted_stream + HEADERS_SUFFIX if formatted_stream else ""
-                }
+                        formatted_stream = format_stream_url(raw_stream, m_id)
+                        
+                        poster = m.get("url_handle", {}).get("img_port_large", "")
+                        if not poster:
+                            poster = m.get("image", "")
+
+                        if formatted_stream:
+                            unique_movies[m_id] = {
+                                "id": m_id,
+                                "title": m.get("title", ""),
+                                "poster": poster,
+                                "genre": m.get("_genre_name", genre["name"]),
+                                "stream": formatted_stream + HEADERS_SUFFIX
+                            }
+            except Exception as e:
+                print(f"    [!] Error processing genre {genre['name']}: {e}")
 
     print(f"\n[✓] A total of {len(unique_movies)} Dens.tv movies successfully extracted!")
     print("==================================================")
@@ -170,11 +200,10 @@ def main():
     count = 0
     with open("movies.m3u", "a", encoding="utf-8") as f:
         for m_id, data in unique_movies.items():
-            if data["stream"]:
-                f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
-                f.write(f'{data["stream"]}\n\n')
-                count += 1
-                print(f"[{count}/{len(unique_movies)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
+            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+            f.write(f'{data["stream"]}\n\n')
+            count += 1
+            print(f"[{count}/{len(unique_movies)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
 
     print("\n==================================================")
     print(f"[COMPLETED] movies.m3u Successfully Updated!")
