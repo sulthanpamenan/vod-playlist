@@ -31,12 +31,14 @@ async def test_single_movie():
         )
         page = await context.new_page()
 
-        # 1. Buka 1 Halaman Genre (Action)
         print("[*] Navigating to Action Genre page...")
         await page.goto("https://www.dens.tv/movie/genre/8/action", wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(2000)
 
-        # 2. Ambil 1 Item Pertama (ID, Title, dan Poster Potret)
+        # Scroll halus untuk mentrigger lazy load gambar potret asli
+        await page.evaluate("window.scrollTo(0, 400);")
+        await page.wait_for_timeout(1000)
+
         movie = await page.evaluate("""() => {
             const a = document.querySelector('a[href*="/watch/"]');
             if (!a) return null;
@@ -45,12 +47,24 @@ async def test_single_movie():
             const match = href.match(/\\/watch\\/(\\d+)/);
             let title = a.innerText ? a.innerText.trim() : (a.getAttribute('title') || '');
 
-            // Mengambil Poster Potret dari gambar terdekat
-            const container = a.closest('.movie-box') || a.parentElement || a;
-            const img = container.querySelector('img');
+            // Ekstraksi Poster Potret Asli (Abaikan SVG Play-Circle)
             let logo = '';
-            if (img) {
-                logo = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+            const container = a.closest('.movie-box') || a.parentElement || a;
+            const imgs = Array.from(container.querySelectorAll('img'));
+            for (let img of imgs) {
+                let src = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                if (src && !src.includes('play-circle') && !src.includes('svg')) {
+                    logo = src;
+                    break;
+                }
+            }
+            if (!logo) {
+                const bgElem = container.querySelector('[style*="background"]') || container;
+                const bgStyle = bgElem.style.backgroundImage || '';
+                const bgMatch = bgStyle.match(/url\\(["']?(.*?)["']?\\)/);
+                if (bgMatch && !bgMatch[1].includes('play-circle') && !bgMatch[1].includes('svg')) {
+                    logo = bgMatch[1];
+                }
             }
 
             return { id: match ? match[1] : null, title: title, url: href, logo: logo };
@@ -63,7 +77,6 @@ async def test_single_movie():
             await browser.close()
             return
 
-        # 3. Tangkap URL M3U8 film tersebut
         captured_m3u8 = None
         def handle_request(req):
             nonlocal captured_m3u8
@@ -91,7 +104,7 @@ async def test_single_movie():
             print(f'#EXTINF:-1 vod="1" tvg-id="{movie["id"]}" tvg-name="{movie["title"]}" tvg-logo="{movie["logo"]}",{movie["title"]}')
             print(f"{final_stream}")
             print("====================================================\n")
-            print("[✓ TEST PASSED] Movie berhasil ditarik!")
+            print("[✓ TEST PASSED] Movie berhasil ditarik beserta poster potret!")
         else:
             print("[X TEST FAILED] Stream M3U8 tidak tertangkap!")
 
