@@ -88,7 +88,7 @@ async def process_series_item(context, item, idx, total):
     page.on("request", handle_request)
 
     try:
-        if direct_url and f"/{c_id}/" in direct_url:
+        if direct_url and f"/{c_id}/" in direct_url and "/watch/" in direct_url:
             target_href = direct_url
         else:
             clean_title = title.replace("&", "and")
@@ -132,7 +132,7 @@ async def process_series_item(context, item, idx, total):
 
     if captured_m3u8:
         stream_url = format_dens_stream_url(captured_m3u8, c_id) + HEADERS_SUFFIX
-        portrait_poster = get_portrait_poster_from_search(title)
+        portrait_poster = get_portrait_poster_from_search(title) or item.get("logo", "")
         
         with open("series.m3u", "a", encoding="utf-8") as f:
             f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{c_id}" tvg-name="{title}" tvg-logo="{portrait_poster}" group-title="{item.get("genre", "Series")}",{title}\n')
@@ -159,17 +159,29 @@ async def collect_series_from_categories(page):
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
             await page.wait_for_timeout(800)
 
+            # PERBAIKAN: Menambahkan selector a[href*="/detail/"] dan a[href*="/movie/"]
             items = await page.evaluate("""() => {
                 const results = [];
-                const links = document.querySelectorAll('a[href*="/watch/"]');
+                const links = document.querySelectorAll('a[href*="/watch/"], a[href*="/detail/"], a[href*="/movie/"]');
                 links.forEach(a => {
                     const href = a.href || '';
-                    const match = href.match(/\\/watch\\/(\\d+)/);
+                    const match = href.match(/\\/(\\d+)(?:\\/|$)/);
                     let title = a.innerText ? a.innerText.trim() : '';
                     if (!title && a.querySelector('img')) title = a.querySelector('img').alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
-                    if (match && title && !title.toLowerCase().includes('watch')) {
-                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href });
+
+                    if (match && title && !['watch', 'detail', 'episodes', 'play'].includes(title.toLowerCase())) {
+                        let logo = '';
+                        const container = a.closest('.movie-box') || a.parentElement || a;
+                        const imgs = Array.from(container.querySelectorAll('img'));
+                        for (let img of imgs) {
+                            let src = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
+                            if (src && !src.includes('svg') && !src.includes('play-circle')) {
+                                logo = src;
+                                break;
+                            }
+                        }
+                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
                     }
                 });
                 return results;
@@ -187,20 +199,24 @@ async def collect_series_from_categories(page):
     print(f"\n[*] Deep Crawl Sidebar DOM of {len(parent_series)} Parent Series...")
     for p_idx, parent in enumerate(parent_series, 1):
         try:
-            parent_url = parent.get("url") or f"https://www.dens.tv/movie/watch/{parent['id']}"
+            parent_url = parent.get("url") or f"https://www.dens.tv/movie/detail/{parent['id']}"
+            if "/detail/" in parent_url:
+                parent_url = parent_url.replace("/detail/", "/watch/")
+                
             await page.goto(parent_url, wait_until="domcontentloaded", timeout=15000)
             await page.wait_for_timeout(1000)
 
             episodes = await page.evaluate("""() => {
                 const results = [];
-                const links = document.querySelectorAll('.player-sidebar a[href*="/watch/"], .tab-content a[href*="/watch/"]');
+                const links = document.querySelectorAll('.player-sidebar a[href*="/watch/"], .tab-content a[href*="/watch/"], .player-sidebar a[href*="/detail/"]');
                 links.forEach(a => {
                     const href = a.href || '';
-                    const match = href.match(/\\/watch\\/(\\d+)/);
+                    const match = href.match(/\\/(\\d+)(?:\\/|$)/);
                     let title = a.innerText ? a.innerText.trim() : '';
                     if (!title && a.querySelector('img')) title = a.querySelector('img').alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
-                    if (match && title && !title.toLowerCase().includes('watch')) {
+
+                    if (match && title && !['watch', 'detail', 'episodes', 'play'].includes(title.toLowerCase())) {
                         results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href });
                     }
                 });
