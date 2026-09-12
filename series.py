@@ -97,7 +97,7 @@ async def process_series_item(context, item, idx, total):
             search_url = f"https://www.dens.tv/search?s={requests.utils.quote(clean_keyword)}"
 
             await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(800)
+            await page.wait_for_timeout(1000)
 
             target_href = await page.evaluate(f"""(targetId) => {{
                 const links = Array.from(document.querySelectorAll('a[href*="/watch/"]'));
@@ -134,7 +134,6 @@ async def process_series_item(context, item, idx, total):
         stream_url = format_dens_stream_url(captured_m3u8, c_id) + HEADERS_SUFFIX
         portrait_poster = get_portrait_poster_from_search(title)
         
-        # PENYESUAIAN: Ditulis ke series.m3u
         with open("series.m3u", "a", encoding="utf-8") as f:
             f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{c_id}" tvg-name="{title}" tvg-logo="{portrait_poster}" group-title="{item.get("genre", "Series")}",{title}\n')
             f.write(f"{stream_url}\n\n")
@@ -145,31 +144,34 @@ async def process_series_item(context, item, idx, total):
         return False
 
 async def collect_series_from_categories(page):
-    print(f"[*] Collecting all series/episodes from {len(CATEGORIES_SERIES)} categories...")
+    print(f"[*] Mengumpulkan seluruh Serial/Episode dari {len(CATEGORIES_SERIES)} Kategori...")
     unique_items = {}
     parent_series = []
 
     for c_idx, cat in enumerate(CATEGORIES_SERIES, 1):
-        print(f"    [{c_idx}/{len(CATEGORIES_SERIES)}] Opening Category: {cat['name']}...")
+        print(f"    [{c_idx}/{len(CATEGORIES_SERIES)}] Membuka Kategori: {cat['name']}...")
         try:
-            await page.goto(cat["url"], wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(1000)
+            await page.goto(cat["url"], wait_until="networkidle", timeout=20000)
+            await page.wait_for_timeout(1500)
 
+            # Scroll bertahap untuk memicu Lazy Load
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
-            await page.wait_for_timeout(500)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
             await page.wait_for_timeout(800)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+            await page.wait_for_timeout(1000)
 
             items = await page.evaluate("""() => {
                 const results = [];
-                const links = document.querySelectorAll('a[href*="/watch/"], a[href*="/detail/"]');
+                const links = document.querySelectorAll('a[href*="/watch/"], a[href*="/detail/"], a[href*="/movie/"]');
                 links.forEach(a => {
                     const href = a.href || '';
-                    const match = href.match(/\\/(?:watch|detail)\\/(\\d+)/);
+                    const match = href.match(/\\/(?:watch|detail|play)\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
                     if (!title && a.querySelector('img')) title = a.querySelector('img').alt || '';
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
-                    if (match && title && !title.toLowerCase().includes('watch')) {
+                    
+                    const isNav = /category|genre|list|home|see all/i.test(title);
+                    if (match && title && !isNav && title.length > 2) {
                         results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href });
                     }
                 });
@@ -183,9 +185,9 @@ async def collect_series_from_categories(page):
                     parent_series.append(item)
 
         except Exception as e:
-            print(f"    [!] Failed to load category {cat['name']}: {e}")
+            print(f"    [!] Gagal memuat kategori {cat['name']}: {e}")
 
-    print(f"\n[*] Deep Crawl Sidebar DOM of {len(parent_series)} Parent Series...")
+    print(f"\n[*] Mengintip Sidebar DOM dari {len(parent_series)} Serial Induk...")
     for p_idx, parent in enumerate(parent_series, 1):
         try:
             parent_url = parent.get("url") or f"https://www.dens.tv/movie/watch/{parent['id']}"
@@ -194,7 +196,7 @@ async def collect_series_from_categories(page):
 
             episodes = await page.evaluate("""() => {
                 const results = [];
-                const links = document.querySelectorAll('.player-sidebar a[href*="/watch/"], .tab-content a[href*="/watch/"]');
+                const links = document.querySelectorAll('.player-sidebar a[href*="/watch/"], .tab-content a[href*="/watch/"], a[href*="/watch/"]');
                 links.forEach(a => {
                     const href = a.href || '';
                     const match = href.match(/\\/watch\\/(\\d+)/);
@@ -220,7 +222,7 @@ async def collect_series_from_categories(page):
 
 async def main():
     print("==================================================")
-    print("[DENS.TV SERIES SCRAPER GITHUB ACTIONS] Starting the Process...")
+    print("[DENS.TV SERIES SCRAPER GITHUB ACTIONS] Memulai Proses Massal...")
     print("==================================================")
 
     header_content = [
@@ -236,7 +238,7 @@ async def main():
         ""
     ]
 
-    # PENYESUAIAN: Membuat berkas series.m3u dengan header HTML
+    # Ditulis ke series.m3u biar cocok sama workflow GitHub Actions
     with open("series.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(header_content) + "\n\n")
 
@@ -254,7 +256,7 @@ async def main():
         series_list = await collect_series_from_categories(page)
         await page.close()
 
-        print(f"\n[✓] A total of {len(series_list)} unique episodes collected!")
+        print(f"\n[✓] Total {len(series_list)} Episode Unik Berhasil Dikumpulkan!")
         print("==================================================")
 
         success_count = 0
@@ -266,7 +268,7 @@ async def main():
         await browser.close()
 
     print("\n==================================================")
-    print(f"[COMPLETED] {success_count} out of {len(series_list)} episodes saved to series.m3u")
+    print(f"[SELESAI] {success_count} dari {len(series_list)} Episode Berhasil Disimpan ke series.m3u")
     print("==================================================")
 
 if __name__ == "__main__":
