@@ -57,9 +57,6 @@ async def test_single_movie():
             await browser.close()
             return
 
-        # Bentuk URL Poster Potret Statis Resmi Dens.tv berdasarkan Movie ID
-        poster_potret = f"https://www.dens.tv/images/poster/potrait/{movie['id']}.jpg"
-
         captured_m3u8 = None
         def handle_request(req):
             nonlocal captured_m3u8
@@ -69,6 +66,15 @@ async def test_single_movie():
         page.on("request", handle_request)
         print(f"[*] Navigating to watch page: {movie['url']}")
         await page.goto(movie['url'], wait_until="domcontentloaded", timeout=20000)
+
+        # Tangkap poster asli dari meta tag og:image halaman nonton
+        poster_url = await page.evaluate("""() => {
+            const ogImg = document.querySelector('meta[property="og:image"]');
+            if (ogImg && ogImg.content) return ogImg.content;
+            const twitterImg = document.querySelector('meta[name="twitter:image"]');
+            if (twitterImg && twitterImg.content) return twitterImg.content;
+            return '';
+        }""")
 
         for _ in range(5):
             if captured_m3u8:
@@ -84,10 +90,10 @@ async def test_single_movie():
         if captured_m3u8:
             final_stream = format_dens_stream_url(captured_m3u8, movie["id"]) + HEADERS_SUFFIX
             print("\n================ RESULT TEST MOVIE ================")
-            print(f'#EXTINF:-1 vod="1" tvg-id="{movie["id"]}" tvg-name="{movie["title"]}" tvg-logo="{poster_potret}",{movie["title"]}')
+            print(f'#EXTINF:-1 vod="1" tvg-id="{movie["id"]}" tvg-name="{movie["title"]}" tvg-logo="{poster_url}",{movie["title"]}')
             print(f"{final_stream}")
             print("====================================================\n")
-            print("[✓ TEST PASSED] Movie & Poster Potret Berhasil!")
+            print("[✓ TEST PASSED] Movie & Poster Asli Berhasil Ditarik!")
         else:
             print("[X TEST FAILED] Stream M3U8 tidak tertangkap!")
 
