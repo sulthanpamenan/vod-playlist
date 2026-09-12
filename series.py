@@ -45,6 +45,8 @@ def format_dens_stream_url(intercepted_url, content_id):
 async def process_series_item(context, item, idx, total, semaphore, file_lock):
     async with semaphore:
         page = await context.new_page()
+        await page.route("**/*.{png,jpg,jpeg,svg,gif,css,woff,woff2}", lambda route: route.abort())
+
         c_id = item["id"]
         title = item["title"]
         direct_url = item.get("url")
@@ -121,7 +123,7 @@ async def collect_series_from_categories(page):
 
     for cat in CATEGORIES_SERIES:
         try:
-            await page.goto(cat["url"], wait_until="networkidle", timeout=20000)
+            await page.goto(cat["url"], wait_until="domcontentloaded", timeout=15000)
             await page.wait_for_timeout(1000)
 
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
@@ -131,7 +133,6 @@ async def collect_series_from_categories(page):
 
             items = await page.evaluate("""() => {
                 const results = [];
-                # Menangkap tautan watch / movie / episode
                 const links = document.querySelectorAll('a[href*="/watch/"], a[href*="/movie/"]');
                 links.forEach(a => {
                     const href = a.href || '';
