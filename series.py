@@ -8,7 +8,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 USER_ID_TARGET = "wnctpm5uf2j"
 HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36&Origin=https://www.dens.tv&Referer=https://www.dens.tv/"
 
-# Daftar Kategori (menggunakan Genre ID dari Dens.tv)
 CATEGORIES = [
     {"name": "New Production", "id": "5544", "slug": "new-production"},
     {"name": "Exclusive", "id": "3774", "slug": "exclusive"},
@@ -26,7 +25,7 @@ HTTP_HEADERS = {
 }
 
 def format_stream_url(raw_url, content_id):
-    """Format URL m3u8 agar menggunakan token/userid target dan index5.m3u8"""
+    """Format the m3u8 URL to use the target token/userid and index5.m3u8"""
     if not raw_url:
         return ""
     parsed = urlparse(raw_url)
@@ -43,30 +42,30 @@ def format_stream_url(raw_url, content_id):
     return urlunparse(parsed._replace(path=path, query=urlencode(query_dict, doseq=True)))
 
 def get_series_by_category(cat_id, cat_slug):
-    """Mengambil seluruh Series Induk dari Kategori"""
+    """Retrieve the entire parent series from the category"""
     url = f"https://www.dens.tv/movie/related/{cat_id}/{cat_slug}?page=1&limit=50&json=true"
     try:
         res = requests.get(url, headers=HTTP_HEADERS, timeout=10, verify=False)
         if res.status_code == 200:
             return res.json().get("data", {}).get("movies", [])
     except Exception as e:
-        print(f"    [!] Gagal mengambil kategori {cat_slug}: {e}")
+        print(f"    [!] Failed to retrieve category {cat_slug}: {e}")
     return []
 
 def get_episodes_by_series(series_id, series_slug):
-    """Mengambil seluruh Episode dari Series Induk"""
+    """Take the entire Episode from the Parent Series"""
     url = f"https://www.dens.tv/movie/series/{series_id}/{series_slug}?page=1&limit=50&json=true"
     try:
         res = requests.get(url, headers=HTTP_HEADERS, timeout=10, verify=False)
         if res.status_code == 200:
             return res.json().get("data", {}).get("movies", [])
     except Exception as e:
-        print(f"    [!] Gagal mengambil episode series {series_id}: {e}")
+        print(f"    [!] Failed to retrieve episodes for series {series_id}: {e}")
     return []
 
 def main():
     print("==================================================")
-    print("[DENS.TV SCRAPER API MURNI] Memulai Ekstraksi Data...")
+    print("[DENS.TV PURE SCRAPER API] Starting Data Extraction...")
     print("==================================================")
 
     header_content = [
@@ -101,21 +100,18 @@ def main():
 
             episodes = get_episodes_by_series(p_id, p_slug)
             
-            # Jika tidak ada sub-episode (single VOD), masukkan series induk itu sendiri
             if not episodes:
                 episodes = [parent]
 
             for ep in episodes:
                 ep_id = ep.get("movie_id")
                 if ep_id and ep_id not in unique_episodes:
-                    # Ambil link stream dari API
                     raw_stream = ep.get("extra", {}).get("stream", {}).get("play_url", "")
                     if not raw_stream:
                         raw_stream = ep.get("file", "")
 
                     formatted_stream = format_stream_url(raw_stream, ep_id)
                     
-                    # Ambil poster portret jika ada
                     poster = ep.get("url_handle", {}).get("img_port_large", "")
                     if not poster:
                         poster = ep.get("image", "")
@@ -128,7 +124,7 @@ def main():
                         "stream": formatted_stream + HEADERS_SUFFIX
                     }
 
-    print(f"\n[✓] Total {len(unique_episodes)} Episode Berhasil Diekstrak!")
+    print(f"\n[✓] A total of {len(unique_episodes)} episodes successfully extracted!")
     print("==================================================")
 
     count = 0
@@ -140,7 +136,7 @@ def main():
             print(f"[{count}/{len(unique_episodes)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
 
     print("\n==================================================")
-    print(f"[SELESAI] {count} Episode Berhasil Disimpan ke series.m3u")
+    print(f"[COMPLETED] {count} episodes successfully saved to series.m3u")
     print("==================================================")
 
 if __name__ == "__main__":
