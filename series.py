@@ -1,7 +1,8 @@
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
 import requests
 import urllib3
-from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -10,19 +11,31 @@ HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 
 CATEGORIES = [
     {"name": "New Production", "id": "5544", "slug": "new-production"},
+    {"name": "New Release", "id": "5551", "slug": "new-release"},
     {"name": "Exclusive", "id": "3774", "slug": "exclusive"},
     {"name": "Drama", "id": "5", "slug": "drama"},
     {"name": "Horror & Thriller", "id": "7", "slug": "horror-thriller"},
     {"name": "Comedy", "id": "56", "slug": "comedy"},
+    {"name": "Cerita Indonesia", "id": "5501", "slug": "cerita-indonesia"},
     {"name": "Food & Cooking", "id": "4570", "slug": "food"},
+    {"name": "Lifestyle & Travels", "id": "5764", "slug": "lifestyle-travels"},
+    {"name": "Music", "id": "5756", "slug": "music"},
+    {"name": "Variety Show", "id": "4712", "slug": "variety-show"},
     {"name": "Sports & Hobbies", "id": "1118", "slug": "sports-and-hobbies"},
 ]
 
-HTTP_HEADERS = {
+# HTTP Adapter untuk Connection Pooling tingkat tinggi
+SESSION = requests.Session()
+SESSION.verify = False
+adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+SESSION.mount("https://", adapter)
+SESSION.mount("http://", adapter)
+
+SESSION.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     "Referer": "https://www.dens.tv/",
     "Accept": "*/*"
-}
+})
 
 def format_stream_url(raw_url, content_id):
     """Format the m3u8 URL to use the target token/userid and index5.m3u8"""
@@ -42,30 +55,57 @@ def format_stream_url(raw_url, content_id):
     return urlunparse(parsed._replace(path=path, query=urlencode(query_dict, doseq=True)))
 
 def get_series_by_category(cat_id, cat_slug):
-    """Retrieve the entire parent series from the category"""
-    url = f"https://www.dens.tv/movie/related/{cat_id}/{cat_slug}?page=1&limit=50&json=true"
-    try:
-        res = requests.get(url, headers=HTTP_HEADERS, timeout=10, verify=False)
-        if res.status_code == 200:
-            return res.json().get("data", {}).get("movies", [])
-    except Exception as e:
-        print(f"    [!] Failed to retrieve category {cat_slug}: {e}")
-    return []
+    """Retrieve the entire parent series from the category with pagination"""
+    all_series = []
+    page = 1
+    while True:
+        url = f"https://www.dens.tv/movie/related/{cat_id}/{cat_slug}?page={page}&limit=50&json=true"
+        try:
+            res = SESSION.get(url, timeout=10)
+            if res.status_code == 200:
+                series = res.json().get("data", {}).get("series", [])
+                if not series:
+                    break
+                all_series.extend(series)
+                page += 1
+            else:
+                break
+        except Exception as e:
+            print(f"    [!] Failed to fetch page {page} for category {cat_slug}: {e}")
+            break
+    return all_series
 
-def get_episodes_by_series(series_id, series_slug):
-    """Take the entire Episode from the Parent Series"""
-    url = f"https://www.dens.tv/movie/series/{series_id}/{series_slug}?page=1&limit=50&json=true"
-    try:
-        res = requests.get(url, headers=HTTP_HEADERS, timeout=10, verify=False)
-        if res.status_code == 200:
-            return res.json().get("data", {}).get("movies", [])
-    except Exception as e:
-        print(f"    [!] Failed to retrieve episodes for series {series_id}: {e}")
-    return []
+def get_episodes_by_series(series_info):
+    """Take all Episodes from the Parent Series (Optimized for Multi-threading)"""
+    series_id = series_info.get("movie_id")
+    series_slug = series_info.get("slug")
+    
+    if not series_id or not series_slug:
+        return []
+
+    all_episodes = []
+    page = 1
+    while True:
+        url = f"https://www.dens.tv/movie/series/{series_id}/{series_slug}?page={page}&limit=50&json=true"
+        try:
+            res = SESSION.get(url, timeout=10)
+            if res.status_code == 200:
+                episodes = res.json().get("data", {}).get("movies", [])
+                if not episodes:
+                    break
+                all_episodes.extend(episodes)
+                page += 1
+            else:
+                break
+        except Exception as e:
+            print(f"    [!] Failed to retrieve episodes page {page} for series {series_id}: {e}")
+            break
+
+    return all_episodes if all_episodes else [series_info]
 
 def main():
     print("==================================================")
-    print("[DENS.TV PURE SCRAPER API] Starting Data Extraction...")
+    print("[DENS.TV PURE SCRAPER API] Starting Ultimate Extraction...")
     print("==================================================")
 
     header_content = [
@@ -85,23 +125,30 @@ def main():
         f.write("\n".join(header_content) + "\n\n")
 
     unique_episodes = {}
-    
+    series_cache = {}  # Cache lokal episode berdasarkan series_id
+
     for cat in CATEGORIES:
         print(f"[*] Fetching Kategori: {cat['name']}...")
         series_list = get_series_by_category(cat["id"], cat["slug"])
         
+        # Pisahkan serial mana yang belum pernah di-fetch episode-nya
+        uncached_series = [s for s in series_list if s.get("movie_id") and s.get("movie_id") not in series_cache]
+        
+        # Tarik episode secara paralel HANYA untuk serial yang belum ada di cache
+        if uncached_series:
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                future_to_parent = {executor.submit(get_episodes_by_series, parent): parent for parent in uncached_series}
+                for future in as_completed(future_to_parent):
+                    parent = future_to_parent[future]
+                    p_id = parent.get("movie_id")
+                    if p_id:
+                        series_cache[p_id] = future.result()
+
+        # Proses pembuatan objek episode untuk kategori ini
         for parent in series_list:
             p_id = parent.get("movie_id")
-            p_slug = parent.get("slug")
-            p_title = parent.get("title")
-
-            if not p_id or not p_slug:
-                continue
-
-            episodes = get_episodes_by_series(p_id, p_slug)
-            
-            if not episodes:
-                episodes = [parent]
+            p_title = parent.get("title", "")
+            episodes = series_cache.get(p_id, [parent])
 
             for ep in episodes:
                 ep_id = ep.get("movie_id")
@@ -121,7 +168,7 @@ def main():
                         "title": ep.get("title", p_title),
                         "poster": poster,
                         "genre": cat["name"],
-                        "stream": formatted_stream + HEADERS_SUFFIX
+                        "stream": formatted_stream + HEADERS_SUFFIX if formatted_stream else ""
                     }
 
     print(f"\n[✓] A total of {len(unique_episodes)} episodes successfully extracted!")
@@ -130,10 +177,11 @@ def main():
     count = 0
     with open("series.m3u", "a", encoding="utf-8") as f:
         for ep_id, data in unique_episodes.items():
-            f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
-            f.write(f'{data["stream"]}\n\n')
-            count += 1
-            print(f"[{count}/{len(unique_episodes)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
+            if data["stream"]:
+                f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+                f.write(f'{data["stream"]}\n\n')
+                count += 1
+                print(f"[{count}/{len(unique_episodes)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
 
     print("\n==================================================")
     print(f"[COMPLETED] {count} episodes successfully saved to series.m3u")
