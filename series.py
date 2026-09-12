@@ -31,34 +31,48 @@ async def test_single_series():
         )
         page = await context.new_page()
 
-        # Buka Halaman Kategori Series Resmi
-        print("[*] Navigating to Series Category page...")
-        await page.goto("https://www.dens.tv/movie/category/1113/series", wait_until="domcontentloaded", timeout=20000)
-        await page.wait_for_timeout(1000)
+        print("[*] Navigating to Series page...")
+        await page.goto("https://www.dens.tv/movie/genre/5501/cerita-indonesia", wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(1500)
 
-        # Ambil link nonton yang valid (bukan link genre-list)
         series = await page.evaluate("""() => {
-            const links = Array.from(document.querySelectorAll('a[href*="/movie/watch/"], a[href*="/watch/"]'));
-            for (let a of links) {
+            const allLinks = Array.from(document.querySelectorAll('a'));
+            for (let a of allLinks) {
                 const href = a.href || '';
-                const match = href.match(/\\/watch\\/(\\d+)/);
+                const match = href.match(/\\/(?:watch|detail|play)\\/(\\d+)/) || href.match(/\\/movie\\/(\\d+)/);
                 let title = a.innerText ? a.innerText.trim() : (a.getAttribute('title') || '');
+                
+                if (!title) {
+                    const img = a.querySelector('img');
+                    if (img) title = img.alt || img.title || '';
+                }
 
-                if (match && title && !href.includes('/genre-list/')) {
+                const isNav = /category|genre|list|home|see all/i.test(title);
+                if (match && title && !isNav && title.length > 2) {
                     return { id: match[1], title: title, url: href };
                 }
             }
             return null;
         }""")
 
+        if not series or not series["id"]:
+            print("[!] First category empty, trying alternate page...")
+            await page.goto("https://www.dens.tv/movie/genre/8/action", wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_timeout(1500)
+            series = await page.evaluate("""() => {
+                const a = document.querySelector('a[href*="/watch/"]');
+                if (!a) return null;
+                const match = a.href.match(/\\/watch\\/(\\d+)/);
+                let title = a.innerText ? a.innerText.trim() : (a.getAttribute('title') || '');
+                return { id: match ? match[1] : null, title: title, url: a.href };
+            }""")
+
         print(f"[*] Found Series Item: {series}")
 
         if not series or not series["id"]:
-            print("[X TEST FAILED] Serial tidak ditemukan di halaman kategori!")
+            print("[X TEST FAILED] Serial tidak ditemukan!")
             await browser.close()
             return
-
-        poster_potret = f"https://www.dens.tv/images/poster/potrait/{series['id']}.jpg"
 
         captured_m3u8 = None
         def handle_request(req):
@@ -69,6 +83,15 @@ async def test_single_series():
         page.on("request", handle_request)
         print(f"[*] Navigating to watch page: {series['url']}")
         await page.goto(series['url'], wait_until="domcontentloaded", timeout=20000)
+
+        # Tangkap poster asli dari meta tag og:image halaman nonton
+        poster_url = await page.evaluate("""() => {
+            const ogImg = document.querySelector('meta[property="og:image"]');
+            if (ogImg && ogImg.content) return ogImg.content;
+            const twitterImg = document.querySelector('meta[name="twitter:image"]');
+            if (twitterImg && twitterImg.content) return twitterImg.content;
+            return '';
+        }""")
 
         for _ in range(5):
             if captured_m3u8:
@@ -84,10 +107,10 @@ async def test_single_series():
         if captured_m3u8:
             final_stream = format_dens_stream_url(captured_m3u8, series["id"]) + HEADERS_SUFFIX
             print("\n================ RESULT TEST SERIES ================")
-            print(f'#EXTINF:-1 vod="1" tvg-id="{series["id"]}" tvg-name="{series["title"]}" tvg-logo="{poster_potret}",{series["title"]}')
+            print(f'#EXTINF:-1 vod="1" tvg-id="{series["id"]}" tvg-name="{series["title"]}" tvg-logo="{poster_url}",{series["title"]}')
             print(f"{final_stream}")
             print("====================================================\n")
-            print("[✓ TEST PASSED] Series & Poster Potret Berhasil!")
+            print("[✓ TEST PASSED] Series & Poster Asli Berhasil Ditarik!")
         else:
             print("[X TEST FAILED] Stream M3U8 Series tidak tertangkap!")
 
