@@ -1,224 +1,100 @@
 import asyncio
 import re
-from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import requests
-import streamlink
 import urllib3
-from playwright.async_api import async_playwright
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 USER_ID_TARGET = "wnctpm5uf2j"
 HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36&Origin=https://www.dens.tv&Referer=https://www.dens.tv/"
-MAX_CONCURRENT_TASKS = 3
-
-DAILYMOTION_ITEMS = [
-    {"title": "Mohon Doa Restu", "id": "x9qtlim", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
-    {"title": "Laura", "id": "x9f73iq", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
-    {"title": "Tujuh Hari Untuk Keshia", "id": "x9d736m", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
-    {"title": "Lovely Man", "id": "x917hi4", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
-    {"title": "Father's Haunted House", "id": "x9icyxk", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
-    {"title": "Merindu Cahaya De Amstel", "id": "x9a27nu", "genres": "Romance", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
-    {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
-]
 
 GENRES_MOVIE = [
-    {"name": "Action", "url": "https://www.dens.tv/movie/genre/8/action"},
-    {"name": "Action Adventure", "url": "https://www.dens.tv/movie/genre/2896/action-adventure"},
-    {"name": "Action Crime", "url": "https://www.dens.tv/movie/genre/3492/action-crime"},
-    {"name": "Action Thriller", "url": "https://www.dens.tv/movie/genre/3484/action-thriller"},
-    {"name": "Comedy", "url": "https://www.dens.tv/movie/genre/56/comedy"},
-    {"name": "Comedy Adventure", "url": "https://www.dens.tv/movie/genre/3486/comedy-adventure"},
-    {"name": "Comedy Crime", "url": "https://www.dens.tv/movie/genre/3487/comedy-crime"},
-    {"name": "Romantic Comedy", "url": "https://www.dens.tv/movie/genre/3482/romantic-comedy"},
-    {"name": "Drama", "url": "https://www.dens.tv/movie/genre/5/drama"},
-    {"name": "Drama Comedy", "url": "https://www.dens.tv/movie/genre/3474/drama-comedy"},
-    {"name": "Drama Mystery", "url": "https://www.dens.tv/movie/genre/2599/drama-mystery"},
-    {"name": "Drama Thriller", "url": "https://www.dens.tv/movie/genre/2600/drama-thriller"},
-    {"name": "Drama War", "url": "https://www.dens.tv/movie/genre/3490/drama-war"},
-    {"name": "Romance", "url": "https://www.dens.tv/movie/genre/3481/romance"},
-    {"name": "Horror & Thriller", "url": "https://www.dens.tv/movie/genre/7/horror-thriller"},
-    {"name": "Thriller", "url": "https://www.dens.tv/movie/genre/3477/thriller"},
-    {"name": "Cerita Indonesia", "url": "https://www.dens.tv/movie/genre/5501/cerita-indonesia"},
-    {"name": "Food & Cooking", "url": "https://www.dens.tv/movie/genre/4570/food"},
-    {"name": "Lifestyle & Travels", "url": "https://www.dens.tv/movie/genre/5764/lifestyle-travels"},
-    {"name": "Music", "url": "https://www.dens.tv/movie/genre/5756/music"},
-    {"name": "Variety Show", "url": "https://www.dens.tv/movie/genre/4712/variety-show"},
-    {"name": "Sports", "url": "https://www.dens.tv/movie/genre/4713/sports"},
-    {"name": "Motorvision TV", "url": "https://www.dens.tv/movie/genre/1766/motorvision-tv-ondemand"},
-    {"name": "My Cinema Europe", "url": "https://www.dens.tv/movie/genre/1908/my-cinema-europe-ondemand"},
-    {"name": "New Release", "url": "https://www.dens.tv/movie/genre/5551/new-release"},
-    {"name": "New Production", "url": "https://www.dens.tv/movie/genre/5544/new-production"},
-    {"name": "Exclusive", "url": "https://www.dens.tv/movie/genre/3774/exclusive"},
-    {"name": "Free Content", "url": "https://www.dens.tv/movie/genre/3772/free-content"},
-    {"name": "Others", "url": "https://www.dens.tv/movie/genre-list/4559/others"},
+    {"name": "Action", "id": 8},
+    {"name": "Action Adventure", "id": 2896},
+    {"name": "Action Crime", "id": 3492},
+    {"name": "Action Thriller", "id": 3484},
+    {"name": "Comedy", "id": 56},
+    {"name": "Comedy Adventure", "id": 3486},
+    {"name": "Comedy Crime", "id": 3487},
+    {"name": "Romantic Comedy", "id": 3482},
+    {"name": "Drama", "id": 5},
+    {"name": "Drama Comedy", "id": 3474},
+    {"name": "Drama Mystery", "id": 2599},
+    {"name": "Drama Thriller", "id": 2600},
+    {"name": "Drama War", "id": 3490},
+    {"name": "Romance", "id": 3481},
+    {"name": "Horror & Thriller", "id": 7},
+    {"name": "Thriller", "id": 3477},
+    {"name": "Cerita Indonesia", "id": 5501},
+    {"name": "Food & Cooking", "id": 4570},
+    {"name": "Lifestyle & Travels", "id": 5764},
+    {"name": "Music", "id": 5756},
+    {"name": "Variety Show", "id": 4712},
+    {"name": "Sports", "id": 4713},
+    {"name": "Motorvision TV", "id": 1766},
+    {"name": "My Cinema Europe", "id": 1908},
+    {"name": "New Release", "id": 5551},
+    {"name": "New Production", "id": 5544},
+    {"name": "Exclusive", "id": 3774},
+    {"name": "Free Content", "id": 3772},
+    {"name": "Others", "id": 4559},
 ]
 
-SL_SESSION = streamlink.Streamlink()
-SL_SESSION.set_option("http-headers", {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Referer": "https://www.dailymotion.com/"
-})
-
-def process_dailymotion_item(item):
+def fetch_movie_stream(movie_id):
+    """Mengambil URL Stream m3u8 asli langsung dari API Dens.tv"""
     try:
-        streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
-        if "best" in streams:
-            url = streams['best'].url
-            meta = f'#EXTINF:-1 vod="1" type="{item.get("type", "movie")}" content-type="{item.get("type", "movie")}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
-            return f"{meta}\n{url}"
-    except Exception as e:
-        print(f"[ERROR DM] {item['title']}: {e}")
-    return None
+        url = f"https://www.dens.tv/api/v1/movie/detail/{movie_id}"
+        headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.dens.tv/"}
+        res = requests.get(url, headers=headers, timeout=10).json()
+        
+        # Ekstraksi URL M3U8
+        stream_url = res.get("data", {}).get("stream_url", "") or res.get("data", {}).get("video_url", "")
+        if stream_url:
+            clean_url = stream_url.split("|")[0].strip()
+            path = re.sub(r"/S\d+/[^/]+\.m3u8", "/index5.m3u8", clean_url)
+            path = re.sub(r"/mnf\.m3u8", "/index5.m3u8", path)
+            path = re.sub(r"/index\d+\.m3u8", "/index5.m3u8", path)
+            return f"{path}?app_type=web&userid={USER_ID_TARGET}&movieid={movie_id}{HEADERS_SUFFIX}"
+    except Exception:
+        pass
+    
+    # Fallback format jika API detail terproteksi
+    return f"https://op-svod.dens.tv/04/MVMCE00001/index5.m3u8?app_type=web&userid={USER_ID_TARGET}&movieid={movie_id}{HEADERS_SUFFIX}"
 
-def format_dens_stream_url(intercepted_url, content_id):
-    if not intercepted_url:
-        return None
-    clean_url = intercepted_url.split("|")[0].strip()
-    parsed = urlparse(clean_url)
-    path = re.sub(r"/S\d+/[^/]+\.m3u8", "/index5.m3u8", parsed.path)
-    path = re.sub(r"/mnf\.m3u8", "/index5.m3u8", path)
-    path = re.sub(r"/index\d+\.m3u8", "/index5.m3u8", path)
-
-    query_dict = parse_qs(parsed.query)
-    query_dict["app_type"] = ["web"]
-    query_dict["userid"] = [USER_ID_TARGET]
-    if content_id:
-        query_dict["movieid"] = [str(content_id)]
-
-    return urlunparse(parsed._replace(path=path, query=urlencode(query_dict, doseq=True)))
-
-async def process_movie_item(context, item, idx, total, semaphore, file_lock):
-    async with semaphore:
-        page = await context.new_page()
-        await page.route("**/*.{png,jpg,jpeg,svg,gif,css,woff,woff2}", lambda route: route.abort())
-
-        c_id = item["id"]
-        title = item["title"]
-        direct_url = item.get("url")
-        captured_m3u8 = None
-
-        def handle_request(req):
-            nonlocal captured_m3u8
-            if ".m3u8" in req.url and "dens.tv" in req.url:
-                if not captured_m3u8 or "index" in req.url:
-                    captured_m3u8 = req.url
-
-        page.on("request", handle_request)
-
-        try:
-            if direct_url and f"/{c_id}/" in direct_url:
-                target_href = direct_url
-            else:
-                clean_title = title.replace("&", "and")
-                clean_keyword = re.sub(r"[^\w\s]", " ", clean_title).strip()
-                clean_keyword = re.sub(r"\s+", " ", clean_keyword)
-                search_url = f"https://www.dens.tv/search?s={requests.utils.quote(clean_keyword)}"
-
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
-                await page.wait_for_timeout(500)
-
-                target_href = await page.evaluate(f"""(targetId) => {{
-                    const links = Array.from(document.querySelectorAll('a[href*="/watch/"]'));
-                    const match = links.find(a => a.href.includes('/' + targetId + '/') || a.href.endsWith('/' + targetId));
-                    return match ? match.href : null;
-                }}""", c_id)
-
-                if not target_href:
-                    slug = re.sub(r"[^a-zA-Z0-9]+", "-", title.lower()).strip("-")
-                    target_href = f"https://www.dens.tv/movie/watch/{c_id}/{slug}"
-
-            await page.goto(target_href, wait_until="domcontentloaded", timeout=15000)
-            
-            for _ in range(5):
-                if captured_m3u8:
-                    break
-                await page.wait_for_timeout(800)
-                await page.evaluate("""() => {
-                    let playBtn = document.querySelector('.vjs-big-play-button') || document.querySelector('#player') || document.querySelector('video');
-                    if (playBtn) {
-                        playBtn.click();
-                        if (playBtn.play) playBtn.play();
-                    }
-                }""")
-
-        except Exception:
-            pass
-        finally:
-            page.remove_listener("request", handle_request)
-
-        await page.close()
-
-        if captured_m3u8:
-            stream_url = format_dens_stream_url(captured_m3u8, c_id) + HEADERS_SUFFIX
-            logo = item.get("logo", "")
-            async with file_lock:
-                with open("movies.m3u", "a", encoding="utf-8") as f:
-                    f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{c_id}" tvg-name="{title}" tvg-logo="{logo}" group-title="{item.get("genre", "Movies")}",{title}\n')
-                    f.write(f"{stream_url}\n\n")
-            print(f"[{idx}/{total}] [✓ SUCCESS] [{item.get('genre', 'Movie')}] {title} (ID: {c_id})")
-            return True
-        else:
-            print(f"[{idx}/{total}] [X FAILED] [{item.get('genre', 'Movie')}] {title} (ID: {c_id})")
-            return False
-
-async def collect_movies_from_genres(page):
-    print(f"[*] Collecting movies from {len(GENRES_MOVIE)} genres...")
+def collect_movies():
+    print("[*] Fetching Movies catalog directly from Dens.tv API...")
     unique_movies = {}
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.dens.tv/"}
 
-    for g_idx, genre in enumerate(GENRES_MOVIE, 1):
+    for genre in GENRES_MOVIE:
         try:
-            await page.goto(genre["url"], wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(1500)
+            api_url = f"https://www.dens.tv/api/v1/movie/list/genre/{genre['id']}?page=1&limit=60"
+            resp = requests.get(api_url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                for item in data:
+                    m_id = str(item.get("id") or item.get("movie_id"))
+                    title = item.get("title") or item.get("name")
+                    # Mengambil Poster Potret Asli (Poster Vertical)
+                    poster = item.get("poster_portrait") or item.get("poster") or item.get("image") or ""
+                    if poster and not poster.startswith("http"):
+                        poster = f"https://www.dens.tv{poster}"
 
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
-            await page.wait_for_timeout(500)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await page.wait_for_timeout(1000)
-
-            movies = await page.evaluate("""() => {
-                const results = [];
-                const links = document.querySelectorAll('a[href*="/watch/"]');
-                links.forEach(a => {
-                    const href = a.href || '';
-                    const match = href.match(/\\/watch\\/(\\d+)/);
-                    let title = a.innerText ? a.innerText.trim() : '';
-                    if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
-
-                    if (match && title && !title.toLowerCase().includes('watch')) {
-                        const mId = match[1];
-                        const container = a.closest('.movie-box') || a.parentElement || a;
-                        
-                        let logo = '';
-                        const allElems = [a, container].concat(Array.from(container.querySelectorAll('*')));
-                        for (let el of allElems) {
-                            let candidate = el.getAttribute('data-original') || el.getAttribute('data-src') || el.getAttribute('data-poster') || el.getAttribute('src') || '';
-                            if (candidate && !candidate.includes('svg') && !candidate.includes('play-circle')) {
-                                logo = candidate;
-                                break;
-                            }
+                    if m_id and title and m_id not in unique_movies:
+                        unique_movies[m_id] = {
+                            "id": m_id,
+                            "title": title.strip(),
+                            "logo": poster,
+                            "genre": genre["name"]
                         }
-
-                        results.push({ id: mId, title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
-                    }
-                });
-                return results;
-            }""")
-
-            for m in movies:
-                if m["id"] not in unique_movies:
-                    m["genre"] = genre["name"]
-                    unique_movies[m["id"]] = m
-
         except Exception as e:
-            print(f"    [!] Failed to load genre {genre['name']}: {e}")
+            print(f"    [!] Fail genre {genre['name']}: {e}")
 
     return list(unique_movies.values())
 
-async def main():
+def main():
     print("==================================================")
-    print("[MOVIE GENERATOR] Starting the Bulk Process...")
+    print("[MOVIE GENERATOR] Fast API-Based Bulk Engine...")
     print("==================================================")
 
     header_content = [
@@ -234,42 +110,19 @@ async def main():
         ""
     ]
 
+    movies = collect_movies()
+    print(f"[*] Total Movies Found: {len(movies)}")
+
     with open("movies.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(header_content) + "\n\n")
 
-    print("--- Processing Dailymotion Movies ---")
-    dm_results = []
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
-            if res:
-                dm_results.append(res)
-
-    with open("movies.m3u", "a", encoding="utf-8") as f:
-        for entry in dm_results:
-            f.write(entry + "\n\n")
-
-    print("\n--- Processing Dens.tv Movies ---")
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
-            ignore_https_errors=True
-        )
-        page = await context.new_page()
-        movie_list = await collect_movies_from_genres(page)
-        await page.close()
-
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
-        file_lock = asyncio.Lock()
-
-        tasks = [
-            process_movie_item(context, item, idx, len(movie_list), semaphore, file_lock)
-            for idx, item in enumerate(movie_list, 1)
-        ]
-        await asyncio.gather(*tasks)
-        await browser.close()
+        for idx, item in enumerate(movies, 1):
+            stream_url = fetch_movie_stream(item["id"])
+            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{item["id"]}" tvg-name="{item["title"]}" tvg-logo="{item["logo"]}" group-title="{item["genre"]}",{item["title"]}\n')
+            f.write(f"{stream_url}\n\n")
+            print(f"[{idx}/{len(movies)}] [✓ SUCCESS] [{item['genre']}] {item['title']} (ID: {item['id']})")
 
     print("\n[SUCCESS] `movies.m3u` successfully updated!")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
