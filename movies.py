@@ -170,7 +170,7 @@ async def collect_movies_from_genres(page):
     for g_idx, genre in enumerate(GENRES_MOVIE, 1):
         try:
             await page.goto(genre["url"], wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(1200)
 
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
             await page.wait_for_timeout(500)
@@ -184,25 +184,24 @@ async def collect_movies_from_genres(page):
                     const href = a.href || '';
                     const match = href.match(/\\/watch\\/(\\d+)/);
                     let title = a.innerText ? a.innerText.trim() : '';
-                    
-                    let logo = '';
-                    const imgs = Array.from(a.querySelectorAll('img')).concat(Array.from(a.parentElement.querySelectorAll('img')));
-                    for (let img of imgs) {
-                        let src = img.getAttribute('data-original') || img.getAttribute('data-src') || img.src || '';
-                        if (src && !src.includes('play-circle') && !src.includes('svg')) {
-                            logo = src;
-                            break;
-                        }
-                    }
-
-                    if (!title) {
-                        const img = a.querySelector('img');
-                        if (img) title = img.alt || '';
-                    }
                     if (!title && a.getAttribute('title')) title = a.getAttribute('title').trim();
 
                     if (match && title && !title.toLowerCase().includes('watch')) {
-                        results.push({ id: match[1], title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
+                        const mId = match[1];
+                        const container = a.closest('.movie-box') || a.parentElement || a;
+                        
+                        # Ekstraksi Poster Potret Asli dari atribut DOM Dens.tv
+                        let logo = '';
+                        const allElems = [a, container].concat(Array.from(container.querySelectorAll('*')));
+                        for (let el of allElems) {
+                            let candidate = el.getAttribute('data-original') || el.getAttribute('data-src') || el.getAttribute('data-poster') || el.getAttribute('src') || '';
+                            if (candidate && !candidate.includes('svg') && !candidate.includes('play-circle')) {
+                                logo = candidate;
+                                break;
+                            }
+                        }
+
+                        results.push({ id: mId, title: title.replace(/\\s+/g, ' ').trim(), url: href, logo: logo });
                     }
                 });
                 return results;
