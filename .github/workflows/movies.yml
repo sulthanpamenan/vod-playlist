@@ -1,4 +1,4 @@
-name: Generate Movies Playlist
+name: Movies Playlist
 
 on:
   schedule:
