@@ -1,4 +1,4 @@
-name: Automated VOD Downloader Cron
+name: test vod
 
 on:
   workflow_dispatch:
