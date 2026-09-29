@@ -44,14 +44,8 @@ def process_show(access_token, show):
     show_name = show.get("show_name") or show.get("title") or "Unknown"
     vanity_url = show.get("vanity_url") or show.get("show_name")
     logo = show.get("logo") or show.get("thumbnail") or ""
-    
-    # Tentukan tipe berdasarkan data show jika tersedia (default: movie)
-    show_type = "movie"
-    if show.get("type") == "SHOW" or "series" in show_name.lower():
-        show_type = "series"
 
     try:
-        # Get video details
         details_url = f"{BASE_URL}/api/v2/video/details/{requests.utils.quote(str(vanity_url))}?show_id={show_id}"
         headers = HEADERS.copy()
         headers["access-token"] = access_token
@@ -62,6 +56,18 @@ def process_show(access_token, show):
             return None
             
         details = res_details.json().get("data", {})
+        
+        # Ambil kategori dari API jika ada (misal: Documentary, Soccer, dll.)
+        categories = details.get("categories", [])
+        primary_category = categories[0].get("category_name", "Free Live Sports VOD") if categories else "Free Live Sports VOD"
+        
+        # Tentukan tipe berdasarkan durasi atau struktur
+        # Karena mayoritas adalah film dokumenter/acara sekali tonton, kita tentukan sebagai movie,
+        # tapi group-title nya menggunakan kategori asli dari API (Documentary, Soccer, dll.)
+        show_type = "movie"
+        if "season" in details or details.get("single_video") == 0:
+            show_type = "series"
+
         resolutions = details.get("resolutions", [])
         playlist_url = next((r.get("url") for r in resolutions if r.get("type") == "auto"), None)
         if not playlist_url and resolutions:
@@ -69,6 +75,34 @@ def process_show(access_token, show):
             
         if not playlist_url:
             return None
+
+        token_url = f"{BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(playlist_url, safe='')}"
+        res_token = requests.get(token_url, headers=headers, timeout=10)
+        if res_token.status_code != 200:
+            return None
+            
+        stream_token = res_token.json().get("data")
+        if not stream_token:
+            return None
+            
+        final_m3u8_url = f"{BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
+        
+        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+        ref = "https://freelivesports.tv/"
+        stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
+        
+        # group-title akan mengikuti kategori asli dari website (Documentary, Soccer, dll.)
+        m3u_entry = (
+            f'#EXTINF:-1 vod="1" type="{show_type}" content-type="{show_type}" '
+            f'tvg-logo="{logo}" group-title="{primary_category}",{show_name}\n'
+            f'{stream_url_with_headers}'
+        )
+        print(f"Berhasil diproses: {show_name} [{primary_category}]")
+        return m3u_entry
+        
+    except Exception as e:
+        print(f"Gagal memproses {show_name}: {e}")
+        return None
 
         # Generate Token
         token_url = f"{BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(playlist_url, safe='')}"
