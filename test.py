@@ -45,11 +45,13 @@ def process_show(access_token, show):
     vanity_url = show.get("vanity_url") or show.get("show_name")
     logo = show.get("logo") or show.get("thumbnail") or ""
     
+    # Tentukan tipe berdasarkan data show jika tersedia (default: movie)
     show_type = "movie"
     if show.get("type") == "SHOW" or "series" in show_name.lower():
         show_type = "series"
 
     try:
+        # Get video details
         details_url = f"{BASE_URL}/api/v2/video/details/{requests.utils.quote(str(vanity_url))}?show_id={show_id}"
         headers = HEADERS.copy()
         headers["access-token"] = access_token
@@ -68,6 +70,7 @@ def process_show(access_token, show):
         if not playlist_url:
             return None
 
+        # Generate Token
         token_url = f"{BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(playlist_url, safe='')}"
         res_token = requests.get(token_url, headers=headers, timeout=10)
         if res_token.status_code != 200:
@@ -79,15 +82,11 @@ def process_show(access_token, show):
             
         final_m3u8_url = f"{BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
         
-        # Tambahkan parameter User-Agent dan Referer standar pemutar IPTV untuk bypass 401
-        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
-        ref = "https://freelivesports.tv/"
-        stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
-        
+        # Format M3U Line sesuai permintaan
         m3u_entry = (
             f'#EXTINF:-1 vod="1" type="{show_type}" content-type="{show_type}" '
             f'tvg-logo="{logo}" group-title="Free Live Sports VOD",{show_name}\n'
-            f'{stream_url_with_headers}'
+            f'{final_m3u8_url}'
         )
         print(f"Berhasil diproses: {show_name}")
         return m3u_entry
@@ -121,7 +120,7 @@ def main():
     m3u_lines = ["#EXTM3U"]
     
     print("3. Memproses VOD secara paralel (Multithreading)...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         futures = [executor.submit(process_show, access_token, show) for show in unique_shows]
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
