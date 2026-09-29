@@ -1,6 +1,6 @@
 import requests
 import json
-import time
+import concurrent.futures
 
 BASE_URL = "https://api.gizmott.com"
 HEADERS = {
@@ -39,27 +39,61 @@ def get_home_data(token):
         print(f"Gagal mengambil data beranda: {response.text}")
         return {}
 
-def get_video_details(token, show_id, video_slug):
-    url = f"{BASE_URL}/api/v2/video/details/{requests.utils.quote(str(video_slug))}?show_id={show_id}"
-    headers = HEADERS.copy()
-    headers["access-token"] = token
-    headers["uid"] = "7938114"
+def process_show(access_token, show):
+    show_id = show.get("show_id")
+    show_name = show.get("show_name") or show.get("title") or "Unknown"
+    vanity_url = show.get("vanity_url") or show.get("show_name")
+    logo = show.get("logo") or show.get("thumbnail") or ""
     
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("data", {})
-    return {}
+    # Tentukan tipe berdasarkan data show jika tersedia (default: movie)
+    show_type = "movie"
+    if show.get("type") == "SHOW" or "series" in show_name.lower():
+        show_type = "series"
 
-def generate_playlist_token(token, playlist_url):
-    url = f"{BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(playlist_url, safe='')}"
-    headers = HEADERS.copy()
-    headers["access-token"] = token
-    headers["uid"] = "7938114"
-    
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("data")
-    return None
+    try:
+        # Get video details
+        details_url = f"{BASE_URL}/api/v2/video/details/{requests.utils.quote(str(vanity_url))}?show_id={show_id}"
+        headers = HEADERS.copy()
+        headers["access-token"] = access_token
+        headers["uid"] = "7938114"
+        
+        res_details = requests.get(details_url, headers=headers, timeout=10)
+        if res_details.status_code != 200:
+            return None
+            
+        details = res_details.json().get("data", {})
+        resolutions = details.get("resolutions", [])
+        playlist_url = next((r.get("url") for r in resolutions if r.get("type") == "auto"), None)
+        if not playlist_url and resolutions:
+            playlist_url = resolutions[0].get("url")
+            
+        if not playlist_url:
+            return None
+
+        # Generate Token
+        token_url = f"{BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(playlist_url, safe='')}"
+        res_token = requests.get(token_url, headers=headers, timeout=10)
+        if res_token.status_code != 200:
+            return None
+            
+        stream_token = res_token.json().get("data")
+        if not stream_token:
+            return None
+            
+        final_m3u8_url = f"{BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
+        
+        # Format M3U Line sesuai permintaan
+        m3u_entry = (
+            f'#EXTINF:-1 vod="1" type="{show_type}" content-type="{show_type}" '
+            f'tvg-logo="{logo}" group-title="Free Live Sports VOD",{show_name}\n'
+            f'{final_m3u8_url}'
+        )
+        print(f"Berhasil diproses: {show_name}")
+        return m3u_entry
+        
+    except Exception as e:
+        print(f"Gagal memproses {show_name}: {e}")
+        return None
 
 def main():
     print("1. Melakukan autentikasi...")
@@ -68,7 +102,6 @@ def main():
     print("2. Mengambil daftar VOD dari beranda...")
     home_data = get_home_data(access_token)
     
-    # Ekstraksi semua show / video secara rekursif dari JSON beranda
     shows = []
     def extract_shows(obj):
         if isinstance(obj, dict):
@@ -81,40 +114,24 @@ def main():
                 extract_shows(item)
                 
     extract_shows(home_data)
-    
-    # Hapus duplikat berdasarkan show_id
-    unique_shows = {s["show_id"]: s for s in shows}.values()
+    unique_shows = list({s["show_id"]: s for s in shows}.values())
     print(f"Ditemukan {len(unique_shows)} VOD unik di beranda.")
     
     m3u_lines = ["#EXTM3U"]
     
-    for show in unique_shows:
-        show_id = show.get("show_id")
-        show_name = show.get("show_name") or show.get("title") or "Unknown"
-        vanity_url = show.get("vanity_url") or show.get("show_name")
-        logo = show.get("logo") or show.get("thumbnail") or ""
-        
-        print(f"Memproses: {show_name}...")
-        details = get_video_details(access_token, show_id, vanity_url)
-        
-        resolutions = details.get("resolutions", [])
-        playlist_url = next((res.get("url") for res in resolutions if res.get("type") == "auto"), None)
-        if not playlist_url and resolutions:
-            playlist_url = resolutions[0].get("url")
-            
-        if playlist_url:
-            stream_token = generate_playlist_token(access_token, playlist_url)
-            if stream_token:
-                final_m3u8_url = f"{BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
-                m3u_lines.append(f'#EXTINF:-1 tvg-logo="{logo}" group-title="Free Live Sports VOD",{show_name}')
-                m3u_lines.append(final_m3u8_url)
-        
-        time.sleep(0.3) # Jeda kecil agar tidak membebani server API
-        
+    print("3. Memproses VOD secara paralel (Multithreading)...")
+    # Menggunakan ThreadPoolExecutor agar proses jauh lebih cepat (10-20 thread bersamaan)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+        futures = [executor.submit(process_show, access_token, show) for show in unique_shows]
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result:
+                m3u_lines.append(result)
+                
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(m3u_lines))
         
-    print("\nSelesai! File playlist.m3u berhasil diperbarui dengan seluruh daftar VOD.")
+    print(f"\nSelesai! File playlist.m3u berhasil diperbarui dengan {len(m3u_lines) - 1} tautan VOD.")
 
 if __name__ == "__main__":
     main()
