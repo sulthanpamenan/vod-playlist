@@ -154,7 +154,8 @@ def main():
     m3u_lines = ["#EXTM3U"]
     
     print("3. Memproses VOD secara paralel (Multithreading)...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    # Menggunakan ThreadPoolExecutor agar proses jauh lebih cepat (10-20 thread bersamaan)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
         futures = [executor.submit(process_show, access_token, show) for show in unique_shows]
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
