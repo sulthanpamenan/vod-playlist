@@ -71,7 +71,6 @@ SL_SESSION.set_option("http-headers", {
 })
 
 def format_stream_url(raw_url, content_id):
-    """Format the m3u8 URL to use the target token/userid and index5.m3u8"""
     if not raw_url:
         return ""
     parsed = urlparse(raw_url)
@@ -92,14 +91,13 @@ def process_dailymotion_item(item):
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
-            meta = f'#EXTINF:-1 vod="1" type="{item.get("type", "movie")}" content-type="{item.get("type", "movie")}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
+            meta = f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
             return f"{meta}\n{url}"
     except Exception as e:
         print(f"[ERROR DM] {item['title']}: {e}")
     return None
 
 def get_movies_by_genre(genre_info):
-    """Retrieve all movies from a genre with automatic pagination and multi-key fallback"""
     genre_id = genre_info["id"]
     genre_slug = genre_info["slug"]
     genre_name = genre_info["name"]
@@ -185,7 +183,6 @@ def main():
 
                         if formatted_stream:
                             unique_movies[m_id] = {
-                                "id": m_id,
                                 "title": m.get("title", ""),
                                 "poster": poster,
                                 "genre": m.get("_genre_name", genre["name"]),
@@ -200,7 +197,7 @@ def main():
     count = 0
     with open("movies.m3u", "a", encoding="utf-8") as f:
         for m_id, data in unique_movies.items():
-            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
             f.write(f'{data["stream"]}\n\n')
             count += 1
             print(f"[{count}/{len(unique_movies)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
