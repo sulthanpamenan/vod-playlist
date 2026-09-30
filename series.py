@@ -99,10 +99,6 @@ def process_fls_show(session, access_token, show):
         categories = details.get("categories", [])
         primary_category = categories[0].get("category_name", "Free Live Sports VOD") if categories else "Free Live Sports VOD"
         
-        show_type = "movie"
-        if "season" in details or details.get("single_video") == 0:
-            show_type = "series"
-
         resolutions = details.get("resolutions", [])
         playlist_url = next((r.get("url") for r in resolutions if r.get("type") == "auto"), None)
         if not playlist_url and resolutions:
@@ -127,11 +123,12 @@ def process_fls_show(session, access_token, show):
         stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
         
         entry = {
-            "id": str(show_id),
             "title": show_name,
+            "serie_title": show_name,
             "poster": logo,
             "genre": primary_category,
-            "type": show_type,
+            "season": "1",
+            "episode": "1",
             "stream": stream_url_with_headers
         }
         print(f"    [FLS ✓] {show_name} [{primary_category}]")
@@ -257,7 +254,7 @@ def main():
             if not episodes:
                 episodes = [parent]
 
-            for ep in episodes:
+            for idx, ep in enumerate(episodes, start=1):
                 ep_id = ep.get("movie_id")
                 if ep_id and ep_id not in unique_episodes:
                     raw_stream = ep.get("extra", {}).get("stream", {}).get("play_url", "")
@@ -270,13 +267,18 @@ def main():
                     if not poster:
                         poster = ep.get("image", "")
 
+                    ep_title = ep.get("title", p_title)
+                    season_num = str(ep.get("season", 1)) if ep.get("season") else "1"
+                    episode_num = str(ep.get("episode", idx)) if ep.get("episode") else str(idx)
+
                     if formatted_stream:
                         unique_episodes[ep_id] = {
-                            "id": str(ep_id),
-                            "title": ep.get("title", p_title),
+                            "title": ep_title,
+                            "serie_title": p_title,
                             "poster": poster,
                             "genre": cat["name"],
-                            "type": "series",
+                            "season": season_num,
+                            "episode": episode_num,
                             "stream": formatted_stream + HEADERS_SUFFIX
                         }
 
@@ -312,7 +314,7 @@ def main():
             for future in as_completed(futures):
                 result = future.result()
                 if result:
-                    item_key = f"fls_{result['id']}"
+                    item_key = f"fls_{result['title']}"
                     if item_key not in unique_episodes:
                         unique_episodes[item_key] = result
                         fls_count += 1
@@ -327,8 +329,10 @@ def main():
 
     count = 0
     with open("series.m3u", "a", encoding="utf-8") as f:
-        for item_id, data in unique_episodes.items():
-            f.write(f'#EXTINF:-1 vod="1" type="{data["type"]}" content-type="{data["type"]}" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+        for item_key, data in unique_episodes.items():
+            formatted_line_title = f"{data['serie_title']} S0{data['season']}E0{data['episode']} - {data['title']}" if len(data['episode']) == 1 else f"{data['serie_title']} S0{data['season']}E{data['episode']} - {data['title']}"
+            
+            f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="" serie-title="{data["serie_title"]}" tvg-season="{data["season"]}" tvg-episode="{data["episode"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{formatted_line_title}\n')
             f.write(f'{data["stream"]}\n\n')
             count += 1
 
