@@ -358,11 +358,12 @@ def main():
     count = 0
     with open("series.m3u", "a", encoding="utf-8") as f:
         for item_key, data in unique_episodes.items():
-            if data.get("type") == "series":
-                formatted_line_title = f"{data['serie_title']} S0{data['season']}E0{data['episode']} - {data['title']}" if len(data['episode']) == 1 else f"{data['serie_title']} S0{data['season']}E{data['episode']} - {data['title']}"
-                f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="{data["tmdb_id"]}" serie-title="{data["serie_title"]}" tvg-season="{data["season"]}" tvg-episode="{data["episode"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{formatted_line_title}\n')
+            if data.get("type") == "series" and "episode" in data:
+                ep_num = str(data['episode'])
+                formatted_line_title = f"{data['serie_title']} S0{data['season']}E0{ep_num} - {data['title']}" if len(ep_num) == 1 else f"{data['serie_title']} S0{data['season']}E{ep_num} - {data['title']}"
+                f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="{data.get("tmdb_id", "")}" serie-title="{data.get("serie_title", data["title"])}" tvg-season="{data.get("season", "1")}" tvg-episode="{ep_num}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{formatted_line_title}\n')
             else:
-                f.write(f'#EXTINF:-1 vod="1" type="{data["type"]}" content-type="{data["type"]}" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+                f.write(f'#EXTINF:-1 vod="1" type="{data.get("type", "movie")}" content-type="{data.get("type", "movie")}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
             
             f.write(f'{data["stream"]}\n\n')
             count += 1
