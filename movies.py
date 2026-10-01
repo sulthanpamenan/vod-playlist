@@ -8,7 +8,6 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 USER_ID_TARGET = "wnctpm5uf2j"
-TMDB_API_KEY = "f5b601ec011f9760c7fb6752670714cf"
 HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36&Origin=https://www.dens.tv&Referer=https://www.dens.tv/"
 
 DAILYMOTION_ITEMS = [
@@ -23,13 +22,34 @@ DAILYMOTION_ITEMS = [
 
 GENRES_MOVIE = [
     {"name": "Action", "id": "8", "slug": "action"},
+    {"name": "Action Adventure", "id": "2896", "slug": "action-adventure"},
+    {"name": "Action Crime", "id": "3492", "slug": "action-crime"},
+    {"name": "Action Thriller", "id": "3484", "slug": "action-thriller"},
     {"name": "Comedy", "id": "56", "slug": "comedy"},
+    {"name": "Comedy Adventure", "id": "3486", "slug": "comedy-adventure"},
+    {"name": "Comedy Crime", "id": "3487", "slug": "comedy-crime"},
+    {"name": "Romantic Comedy", "id": "3482", "slug": "romantic-comedy"},
     {"name": "Drama", "id": "5", "slug": "drama"},
+    {"name": "Drama Comedy", "id": "3474", "slug": "drama-comedy"},
+    {"name": "Drama Mystery", "id": "2599", "slug": "drama-mystery"},
+    {"name": "Drama Thriller", "id": "2600", "slug": "drama-thriller"},
+    {"name": "Drama War", "id": "3490", "slug": "drama-war"},
     {"name": "Romance", "id": "3481", "slug": "romance"},
     {"name": "Horror & Thriller", "id": "7", "slug": "horror-thriller"},
+    {"name": "Thriller", "id": "3477", "slug": "thriller"},
+    {"name": "Cerita Indonesia", "id": "5501", "slug": "cerita-indonesia"},
+    {"name": "Food & Cooking", "id": "4570", "slug": "food"},
+    {"name": "Lifestyle & Travels", "id": "5764", "slug": "lifestyle-travels"},
+    {"name": "Music", "id": "5756", "slug": "music"},
+    {"name": "Variety Show", "id": "4712", "slug": "variety-show"},
+    {"name": "Sports", "id": "4713", "slug": "sports"},
+    {"name": "Motorvision TV", "id": "1766", "slug": "motorvision-tv-ondemand"},
+    {"name": "My Cinema Europe", "id": "1908", "slug": "my-cinema-europe-ondemand"},
     {"name": "New Release", "id": "5551", "slug": "new-release"},
     {"name": "New Production", "id": "5544", "slug": "new-production"},
     {"name": "Exclusive", "id": "3774", "slug": "exclusive"},
+    {"name": "Free Content", "id": "3772", "slug": "free-content"},
+    {"name": "Others", "id": "4559", "slug": "others"},
 ]
 
 SESSION = requests.Session()
@@ -50,24 +70,8 @@ SL_SESSION.set_option("http-headers", {
     "Referer": "https://www.dailymotion.com/"
 })
 
-def fetch_tmdb_id(title, media_type="movie"):
-    """Fungsi otomatis mencari ID TMDB berdasarkan judul"""
-    if not TMDB_API_KEY or TMDB_API_KEY == "MASUKKAN_TMDB_API_KEY_ANDA_DISINI":
-        return ""
-    try:
-        clean_title = re.sub(r'\s*\(.*?\)', '', title).strip() # Bersihkan tahun dalam kurung
-        url = f"https://api.themoviedb.org/3/search/{media_type}"
-        params = {"api_key": TMDB_API_KEY, "query": clean_title}
-        res = requests.get(url, params=params, timeout=5)
-        if res.status_code == 200:
-            results = res.json().get("results", [])
-            if results:
-                return str(results[0].get("id", ""))
-    except Exception:
-        pass
-    return ""
-
 def format_stream_url(raw_url, content_id):
+    """Format the m3u8 URL to use the target token/userid and index5.m3u8"""
     if not raw_url:
         return ""
     parsed = urlparse(raw_url)
@@ -88,14 +92,14 @@ def process_dailymotion_item(item):
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
-            tmdb_id = fetch_tmdb_id(item["title"], "movie")
-            meta = f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{tmdb_id}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
+            meta = f'#EXTINF:-1 vod="1" type="{item.get("type", "movie")}" content-type="{item.get("type", "movie")}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
             return f"{meta}\n{url}"
     except Exception as e:
         print(f"[ERROR DM] {item['title']}: {e}")
     return None
 
 def get_movies_by_genre(genre_info):
+    """Retrieve all movies from a genre with automatic pagination and multi-key fallback"""
     genre_id = genre_info["id"]
     genre_slug = genre_info["slug"]
     genre_name = genre_info["name"]
@@ -118,21 +122,26 @@ def get_movies_by_genre(genre_info):
             else:
                 break
         except Exception as e:
+            print(f"    [!] Failed to fetch page {page} for genre {genre_slug}: {e}")
             break
     return all_movies
 
 def main():
     print("==================================================")
-    print("[PURE MOVIE GENERATOR API] With Auto-TMDB Mapping")
+    print("[PURE MOVIE GENERATOR API] Starting Ultimate Extraction...")
     print("==================================================")
 
     header_content = [
-        "#EXTM3U", "", "<html>", "<head>", '<meta charset="utf-8">',
+        "#EXTM3U",
+        "", "<html>", "<head>", '<meta charset="utf-8">',
+        '<meta http-equiv="X-UA-Compatible" content="IE=edge">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<script language=\"javascript\">",
         'window.location.replace("https://sulthanpamenan.github.io/vod-playlist/");',
         "</script>", "</head></html>", "",
-        "<================== PLAYLIST AUTOGENERATED BY SUTAN PAMENAN ==================>", ""
+        "<================== PLAYLIST AUTOGENERATED BY SUTAN PAMENAN ==================>",
+        "<================== IF YOU FIND THIS PLAYLIST, PLEASE DO NOT SELL OR DISTRIBUTE IT FOR PERSONAL GAIN ==================>",
+        ""
     ]
 
     with open("movies.m3u", "w", encoding="utf-8") as f:
@@ -140,49 +149,65 @@ def main():
 
     print("--- Processing Dailymotion Movies ---")
     dm_results = []
-    for item in DAILYMOTION_ITEMS:
-        res = process_dailymotion_item(item)
-        if res:
-            dm_results.append(res)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
+            if res:
+                dm_results.append(res)
 
     with open("movies.m3u", "a", encoding="utf-8") as f:
         for entry in dm_results:
             f.write(entry + "\n\n")
 
-    print("\n--- Processing Dens.tv Movies via API ---")
+    print("\n--- Processing Dens.tv Movies via API (Parallel) ---")
     unique_movies = {}
 
-    for genre in GENRES_MOVIE:
-        movies = get_movies_by_genre(genre)
-        print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
-        for m in movies:
-            m_id = m.get("movie_id")
-            if m_id and m_id not in unique_movies:
-                raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "") or m.get("file", "")
-                formatted_stream = format_stream_url(raw_stream, m_id)
-                poster = m.get("url_handle", {}).get("img_port_large", "") or m.get("image", "")
-                title = m.get("title", "")
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_genre = {executor.submit(get_movies_by_genre, g): g for g in GENRES_MOVIE}
+        
+        for future in as_completed(future_to_genre):
+            genre = future_to_genre[future]
+            try:
+                movies = future.result()
+                print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
+                
+                for m in movies:
+                    m_id = m.get("movie_id")
+                    if m_id and m_id not in unique_movies:
+                        raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "")
+                        if not raw_stream:
+                            raw_stream = m.get("file", "")
 
-                if formatted_stream:
-                    # Ambil ID TMDB secara otomatis
-                    tmdb_id = fetch_tmdb_id(title, "movie")
-                    unique_movies[m_id] = {
-                        "title": title,
-                        "tmdb_id": tmdb_id,
-                        "poster": poster,
-                        "genre": genre["name"],
-                        "stream": formatted_stream + HEADERS_SUFFIX
-                    }
+                        formatted_stream = format_stream_url(raw_stream, m_id)
+                        
+                        poster = m.get("url_handle", {}).get("img_port_large", "")
+                        if not poster:
+                            poster = m.get("image", "")
+
+                        if formatted_stream:
+                            unique_movies[m_id] = {
+                                "id": m_id,
+                                "title": m.get("title", ""),
+                                "poster": poster,
+                                "genre": m.get("_genre_name", genre["name"]),
+                                "stream": formatted_stream + HEADERS_SUFFIX
+                            }
+            except Exception as e:
+                print(f"    [!] Error processing genre {genre['name']}: {e}")
+
+    print(f"\n[✓] A total of {len(unique_movies)} Dens.tv movies successfully extracted!")
+    print("==================================================")
 
     count = 0
     with open("movies.m3u", "a", encoding="utf-8") as f:
         for m_id, data in unique_movies.items():
-            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{data["tmdb_id"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
             f.write(f'{data["stream"]}\n\n')
             count += 1
-            print(f"[{count}] [✓] [{data['genre']}] {data['title']} (TMDB: {data['tmdb_id'] or 'Not Found'})")
+            print(f"[{count}/{len(unique_movies)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
 
-    print("\n[COMPLETED] movies.m3u Successfully Updated!")
+    print("\n==================================================")
+    print(f"[COMPLETED] movies.m3u Successfully Updated!")
+    print("==================================================")
 
 if __name__ == "__main__":
     main()
