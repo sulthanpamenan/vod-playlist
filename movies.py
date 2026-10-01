@@ -8,16 +8,17 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 USER_ID_TARGET = "wnctpm5uf2j"
+TMDB_API_KEY = "f5b601ec011f9760c7fb6752670714cf"
 HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36&Origin=https://www.dens.tv&Referer=https://www.dens.tv/"
 
 DAILYMOTION_ITEMS = [
-    {"title": "Mohon Doa Restu", "id": "x9qtlim", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
-    {"title": "Laura", "id": "x9f73iq", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
-    {"title": "Tujuh Hari Untuk Keshia", "id": "x9d736m", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
-    {"title": "Lovely Man", "id": "x917hi4", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
-    {"title": "Father's Haunted House", "id": "x9icyxk", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
-    {"title": "Merindu Cahaya De Amstel", "id": "x9a27nu", "genres": "Romance", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
-    {"title": "Pasutri Gaje", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
+    {"title": "Mohon Doa Restu (2023)", "id": "x9qtlim", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
+    {"title": "Laura (2024)", "id": "x9f73iq", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
+    {"title": "Tujuh Hari Untuk Keshia (2025)", "id": "x9d736m", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
+    {"title": "Lovely Man (2011)", "id": "x917hi4", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
+    {"title": "Rumah Dinas Bapak (2024)", "id": "x9icyxk", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
+    {"title": "Merindu Cahaya De Amstel (2022)", "id": "x9a27nu", "genres": "Romance", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
+    {"title": "Pasutri Gaje (2024)", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
 ]
 
 GENRES_MOVIE = [
@@ -70,8 +71,23 @@ SL_SESSION.set_option("http-headers", {
     "Referer": "https://www.dailymotion.com/"
 })
 
+def fetch_tmdb_id(title, media_type="movie"):
+    if not TMDB_API_KEY or TMDB_API_KEY == "f5b601ec011f9760c7fb6752670714cf":
+        return ""
+    try:
+        clean_title = re.sub(r'\s*\(.*?\)', '', title).strip()
+        url = f"https://api.themoviedb.org/3/search/{media_type}"
+        params = {"api_key": TMDB_API_KEY, "query": clean_title}
+        res = requests.get(url, params=params, timeout=5)
+        if res.status_code == 200:
+            results = res.json().get("results", [])
+            if results:
+                return str(results[0].get("id", ""))
+    except Exception:
+        pass
+    return ""
+
 def format_stream_url(raw_url, content_id):
-    """Format the m3u8 URL to use the target token/userid and index5.m3u8"""
     if not raw_url:
         return ""
     parsed = urlparse(raw_url)
@@ -92,14 +108,14 @@ def process_dailymotion_item(item):
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
-            meta = f'#EXTINF:-1 vod="1" type="{item.get("type", "movie")}" content-type="{item.get("type", "movie")}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
+            tmdb_id = fetch_tmdb_id(item["title"], "movie")
+            meta = f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{tmdb_id}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
             return f"{meta}\n{url}"
     except Exception as e:
         print(f"[ERROR DM] {item['title']}: {e}")
     return None
 
 def get_movies_by_genre(genre_info):
-    """Retrieve all movies from a genre with automatic pagination and multi-key fallback"""
     genre_id = genre_info["id"]
     genre_slug = genre_info["slug"]
     genre_name = genre_info["name"]
@@ -121,14 +137,13 @@ def get_movies_by_genre(genre_info):
                 page += 1
             else:
                 break
-        except Exception as e:
-            print(f"    [!] Failed to fetch page {page} for genre {genre_slug}: {e}")
+        except Exception:
             break
     return all_movies
 
 def main():
     print("==================================================")
-    print("[PURE MOVIE GENERATOR API] Starting Ultimate Extraction...")
+    print("[PURE MOVIE GENERATOR API] With Auto-TMDB & Full Genres")
     print("==================================================")
 
     header_content = [
@@ -149,65 +164,48 @@ def main():
 
     print("--- Processing Dailymotion Movies ---")
     dm_results = []
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
-            if res:
-                dm_results.append(res)
+    for item in DAILYMOTION_ITEMS:
+        res = process_dailymotion_item(item)
+        if res:
+            dm_results.append(res)
 
     with open("movies.m3u", "a", encoding="utf-8") as f:
         for entry in dm_results:
             f.write(entry + "\n\n")
 
-    print("\n--- Processing Dens.tv Movies via API (Parallel) ---")
+    print("\n--- Processing Dens.tv Movies via API ---")
     unique_movies = {}
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_genre = {executor.submit(get_movies_by_genre, g): g for g in GENRES_MOVIE}
-        
-        for future in as_completed(future_to_genre):
-            genre = future_to_genre[future]
-            try:
-                movies = future.result()
-                print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
-                
-                for m in movies:
-                    m_id = m.get("movie_id")
-                    if m_id and m_id not in unique_movies:
-                        raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "")
-                        if not raw_stream:
-                            raw_stream = m.get("file", "")
+    for genre in GENRES_MOVIE:
+        movies = get_movies_by_genre(genre)
+        print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
+        for m in movies:
+            m_id = m.get("movie_id")
+            if m_id and m_id not in unique_movies:
+                raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "") or m.get("file", "")
+                formatted_stream = format_stream_url(raw_stream, m_id)
+                poster = m.get("url_handle", {}).get("img_port_large", "") or m.get("image", "")
+                title = m.get("title", "")
 
-                        formatted_stream = format_stream_url(raw_stream, m_id)
-                        
-                        poster = m.get("url_handle", {}).get("img_port_large", "")
-                        if not poster:
-                            poster = m.get("image", "")
-
-                        if formatted_stream:
-                            unique_movies[m_id] = {
-                                "id": m_id,
-                                "title": m.get("title", ""),
-                                "poster": poster,
-                                "genre": m.get("_genre_name", genre["name"]),
-                                "stream": formatted_stream + HEADERS_SUFFIX
-                            }
-            except Exception as e:
-                print(f"    [!] Error processing genre {genre['name']}: {e}")
-
-    print(f"\n[✓] A total of {len(unique_movies)} Dens.tv movies successfully extracted!")
-    print("==================================================")
+                if formatted_stream:
+                    tmdb_id = fetch_tmdb_id(title, "movie")
+                    unique_movies[m_id] = {
+                        "title": title,
+                        "tmdb_id": tmdb_id,
+                        "poster": poster,
+                        "genre": genre["name"],
+                        "stream": formatted_stream + HEADERS_SUFFIX
+                    }
 
     count = 0
     with open("movies.m3u", "a", encoding="utf-8") as f:
         for m_id, data in unique_movies.items():
-            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{data["tmdb_id"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
             f.write(f'{data["stream"]}\n\n')
             count += 1
-            print(f"[{count}/{len(unique_movies)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
+            print(f"[{count}] [✓] [{data['genre']}] {data['title']} (TMDB: {data['tmdb_id'] or 'Not Found'})")
 
-    print("\n==================================================")
-    print(f"[COMPLETED] movies.m3u Successfully Updated!")
-    print("==================================================")
+    print("\n[COMPLETED] movies.m3u Successfully Updated!")
 
 if __name__ == "__main__":
     main()
