@@ -137,13 +137,13 @@ def get_movies_by_genre(genre_info):
                 page += 1
             else:
                 break
-        except Exception:
+        except Exception as e:
             break
     return all_movies
 
 def main():
     print("==================================================")
-    print("[PURE MOVIE GENERATOR API] With Auto-TMDB & Full Genres")
+    print("[PURE MOVIE GENERATOR API] Starting Ultimate Extraction...")
     print("==================================================")
 
     header_content = [
@@ -164,38 +164,55 @@ def main():
 
     print("--- Processing Dailymotion Movies ---")
     dm_results = []
-    for item in DAILYMOTION_ITEMS:
-        res = process_dailymotion_item(item)
-        if res:
-            dm_results.append(res)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
+            if res:
+                dm_results.append(res)
 
     with open("movies.m3u", "a", encoding="utf-8") as f:
         for entry in dm_results:
             f.write(entry + "\n\n")
 
-    print("\n--- Processing Dens.tv Movies via API ---")
+    print("\n--- Processing Dens.tv Movies via API (Parallel) ---")
     unique_movies = {}
 
-    for genre in GENRES_MOVIE:
-        movies = get_movies_by_genre(genre)
-        print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
-        for m in movies:
-            m_id = m.get("movie_id")
-            if m_id and m_id not in unique_movies:
-                raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "") or m.get("file", "")
-                formatted_stream = format_stream_url(raw_stream, m_id)
-                poster = m.get("url_handle", {}).get("img_port_large", "") or m.get("image", "")
-                title = m.get("title", "")
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_genre = {executor.submit(get_movies_by_genre, g): g for g in GENRES_MOVIE}
+        
+        for future in as_completed(future_to_genre):
+            genre = future_to_genre[future]
+            try:
+                movies = future.result()
+                print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
+                
+                for m in movies:
+                    m_id = m.get("movie_id")
+                    if m_id and m_id not in unique_movies:
+                        raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "")
+                        if not raw_stream:
+                            raw_stream = m.get("file", "")
 
-                if formatted_stream:
-                    tmdb_id = fetch_tmdb_id(title, "movie")
-                    unique_movies[m_id] = {
-                        "title": title,
-                        "tmdb_id": tmdb_id,
-                        "poster": poster,
-                        "genre": genre["name"],
-                        "stream": formatted_stream + HEADERS_SUFFIX
-                    }
+                        formatted_stream = format_stream_url(raw_stream, m_id)
+                        
+                        poster = m.get("url_handle", {}).get("img_port_large", "")
+                        if not poster:
+                            poster = m.get("image", "")
+
+                        if formatted_stream:
+                            tmdb_id = fetch_tmdb_id(m.get("title", ""), "movie")
+                            unique_movies[m_id] = {
+                                "id": m_id,
+                                "title": m.get("title", ""),
+                                "tmdb_id": tmdb_id,
+                                "poster": poster,
+                                "genre": m.get("_genre_name", genre["name"]),
+                                "stream": formatted_stream + HEADERS_SUFFIX
+                            }
+            except Exception as e:
+                print(f"    [!] Error processing genre {genre['name']}: {e}")
+
+    print(f"\n[✓] A total of {len(unique_movies)} Dens.tv movies successfully extracted!")
+    print("==================================================")
 
     count = 0
     with open("movies.m3u", "a", encoding="utf-8") as f:
@@ -203,9 +220,11 @@ def main():
             f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{data["tmdb_id"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
             f.write(f'{data["stream"]}\n\n')
             count += 1
-            print(f"[{count}] [✓] [{data['genre']}] {data['title']} (TMDB: {data['tmdb_id'] or 'Not Found'})")
+            print(f"[{count}/{len(unique_movies)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
 
-    print("\n[COMPLETED] movies.m3u Successfully Updated!")
+    print("\n==================================================")
+    print(f"[COMPLETED] movies.m3u Successfully Updated!")
+    print("==================================================")
 
 if __name__ == "__main__":
     main()
