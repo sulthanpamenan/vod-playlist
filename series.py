@@ -8,8 +8,8 @@ from urllib3.util.retry import Retry
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ================= CONFIGURASI DENS.TV =================
 USER_ID_TARGET = "wnctpm5uf2j"
+TMDB_API_KEY = "f5b601ec011f9760c7fb6752670714cf"
 HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36&Origin=https://www.dens.tv&Referer=https://www.dens.tv/"
 
 CATEGORIES = [
@@ -34,114 +34,27 @@ SESSION_DENSTV.mount("https://", adapter_dens)
 SESSION_DENSTV.mount("http://", adapter_dens)
 
 SESSION_DENSTV.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Referer": "https://www.dens.tv/",
     "Accept": "*/*"
 })
 
-# ================= CONFIGURASI FREELIVESPORTS =================
-FLS_BASE_URL = "https://api.gizmott.com"
-FLS_HEADERS = {
-    "accept": "application/json, text/plain, */*",
-    "channelid": "516",
-    "country_code": "ID",
-    "dev_id": "5d01d64ac5b0026957052f0330129fc6",
-    "device_type": "web",
-    "pubid": "50183",
-    "origin": "https://freelivesports.tv",
-    "referer": "https://freelivesports.tv/",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
-}
-
-def create_fls_session():
-    session = requests.Session()
-    retries = Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
-    adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=20)
-    session.mount("https://", adapter)
-    session.headers.update(FLS_HEADERS)
-    return session
-
-def fls_authenticate(session):
-    url = f"{FLS_BASE_URL}/api/v1/account/authenticate"
-    headers = {"uid": "7938114"}
-    response = session.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("token")
-    else:
-        raise Exception(f"FLS authentication failed: {response.text}")
-
-def fls_get_home_data(session, token):
-    url = f"{FLS_BASE_URL}/api/v2/home"
-    headers = {"access-token": token, "uid": "7938114"}
-    response = session.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"    [!] Failed to retrieve FLS home data: {response.text}")
-        return {}
-
-def process_fls_show(session, access_token, show):
-    show_id = show.get("show_id")
-    show_name = show.get("show_name") or show.get("title") or "Unknown"
-    vanity_url = show.get("vanity_url") or show.get("show_name")
-    logo = show.get("logo") or show.get("thumbnail") or ""
-
+def fetch_tmdb_id(title, media_type="tv"):
+    if not TMDB_API_KEY or TMDB_API_KEY == "f5b601ec011f9760c7fb6752670714cf":
+        return ""
     try:
-        details_url = f"{FLS_BASE_URL}/api/v2/video/details/{requests.utils.quote(str(vanity_url))}?show_id={show_id}"
-        headers = {"access-token": access_token, "uid": "7938114"}
-        
-        res_details = session.get(details_url, headers=headers, timeout=10)
-        if res_details.status_code != 200:
-            return None
-            
-        details = res_details.json().get("data", {})
-        
-        categories = details.get("categories", [])
-        primary_category = categories[0].get("category_name", "Free Live Sports VOD") if categories else "Free Live Sports VOD"
-        
-        show_type = "movie"
-        if "season" in details or details.get("single_video") == 0:
-            show_type = "series"
+        clean_title = re.sub(r'\s*\(.*?\)', '', title).strip()
+        url = f"https://api.themoviedb.org/3/search/{media_type}"
+        params = {"api_key": TMDB_API_KEY, "query": clean_title}
+        res = requests.get(url, params=params, timeout=5)
+        if res.status_code == 200:
+            results = res.json().get("results", [])
+            if results:
+                return str(results[0].get("id", ""))
+    except Exception:
+        pass
+    return ""
 
-        resolutions = details.get("resolutions", [])
-        playlist_url = next((r.get("url") for r in resolutions if r.get("type") == "auto"), None)
-        if not playlist_url and resolutions:
-            playlist_url = resolutions[0].get("url")
-            
-        if not playlist_url:
-            return None
-
-        token_url = f"{FLS_BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(playlist_url, safe='')}"
-        res_token = session.get(token_url, headers=headers, timeout=10)
-        if res_token.status_code != 200:
-            return None
-            
-        stream_token = res_token.json().get("data")
-        if not stream_token:
-            return None
-            
-        final_m3u8_url = f"{FLS_BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
-        
-        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
-        ref = "https://freelivesports.tv/"
-        stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
-        
-        entry = {
-            "id": str(show_id),
-            "title": show_name,
-            "poster": logo,
-            "genre": primary_category,
-            "type": show_type,
-            "stream": stream_url_with_headers
-        }
-        print(f"    [FLS ✓] {show_name} [{primary_category}]")
-        return entry
-        
-    except Exception as e:
-        print(f"    [FLS ✗] Failed to process {show_name}: {e}")
-        return None
-
-# ================= DENS.TV FUNCTIONS =================
 def format_stream_url(raw_url, content_id):
     if not raw_url:
         return ""
@@ -174,8 +87,7 @@ def get_series_by_category(cat_id, cat_slug):
                 page += 1
             else:
                 break
-        except Exception as e:
-            print(f"    [!] Failed to fetch page {page} Dens.tv category {cat_slug}: {e}")
+        except Exception:
             break
     return all_series
 
@@ -194,15 +106,13 @@ def get_episodes_by_series(series_id, series_slug):
                 page += 1
             else:
                 break
-        except Exception as e:
-            print(f"    [!] Failed to retrieve episodes page {page} series Dens.tv {series_id}: {e}")
+        except Exception:
             break
     return all_episodes
 
-# ================= MAIN =================
 def main():
     print("==================================================")
-    print("[UNIFIED VOD SCRAPER] Dens.tv & FreeLiveSports...")
+    print("[SERIES GENERATOR] With Auto-TMDB & Full Categories")
     print("==================================================")
 
     header_content = [
@@ -214,7 +124,7 @@ def main():
         'window.location.replace("https://sulthanpamenan.github.io/vod-playlist/");',
         "</script>", "</body></html>", "",
         "<================== PLAYLIST AUTOGENERATED BY SUTAN PAMENAN ==================>",
-        "<================== DO NOT SELL OR DISTRIBUTE FOR PERSONAL GAIN ==================>",
+        "<================== IF YOU FIND THIS PLAYLIST, PLEASE DO NOT SELL OR DISTRIBUTE FOR PERSONAL GAIN ==================>",
         ""
     ]
 
@@ -222,119 +132,59 @@ def main():
         f.write("\n".join(header_content) + "\n\n")
 
     unique_episodes = {}
+    tmdb_cache = {}
 
-    # 1. Retrieve DENS.TV Data
-    print("\n--- [1/2] Retrieving Data from Dens.tv ---")
-    series_cache = {}
     for cat in CATEGORIES:
-        print(f"[*] Dens.tv Category Fetching: {cat['name']}...")
+        print(f"[*] Fetching category: {cat['name']}...")
         series_list = get_series_by_category(cat["id"], cat["slug"])
-        print(f"    Found {len(series_list)} items in category {cat['name']}")
         
-        uncached_series = [s for s in series_list if s.get("movie_id") and s.get("movie_id") not in series_cache]
-        
-        if uncached_series:
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                future_to_parent = {
-                    executor.submit(get_episodes_by_series, s["movie_id"], s.get("slug", "")): s["movie_id"] 
-                    for s in uncached_series if s.get("movie_id")
-                }
-                for future in as_completed(future_to_parent):
-                    s_id = future_to_parent[future]
-                    try:
-                        res = future.result()
-                        series_cache[s_id] = res if res else []
-                    except Exception:
-                        series_cache[s_id] = []
-
         for parent in series_list:
             p_id = parent.get("movie_id")
             p_title = parent.get("title", "")
             if not p_id:
                 continue
 
-            episodes = series_cache.get(p_id, [])
+            if p_title not in tmdb_cache:
+                tmdb_cache[p_title] = fetch_tmdb_id(p_title, "tv")
+            parent_tmdb_id = tmdb_cache[p_title]
+
+            episodes = get_episodes_by_series(p_id, parent.get("slug", ""))
             if not episodes:
                 episodes = [parent]
 
-            for ep in episodes:
+            for idx, ep in enumerate(episodes, start=1):
                 ep_id = ep.get("movie_id")
                 if ep_id and ep_id not in unique_episodes:
-                    raw_stream = ep.get("extra", {}).get("stream", {}).get("play_url", "")
-                    if not raw_stream:
-                        raw_stream = ep.get("file", "")
-
+                    raw_stream = ep.get("extra", {}).get("stream", {}).get("play_url", "") or ep.get("file", "")
                     formatted_stream = format_stream_url(raw_stream, ep_id)
-                    
-                    poster = ep.get("url_handle", {}).get("img_port_large", "")
-                    if not poster:
-                        poster = ep.get("image", "")
+                    poster = ep.get("url_handle", {}).get("img_port_large", "") or ep.get("image", "")
+                    ep_title = ep.get("title", p_title)
+                    season_num = str(ep.get("season", 1)) if ep.get("season") else "1"
+                    episode_num = str(ep.get("episode", idx)) if ep.get("episode") else str(idx)
 
                     if formatted_stream:
                         unique_episodes[ep_id] = {
-                            "id": str(ep_id),
-                            "title": ep.get("title", p_title),
+                            "title": ep_title,
+                            "serie_title": p_title,
+                            "tmdb_id": parent_tmdb_id,
                             "poster": poster,
                             "genre": cat["name"],
-                            "type": "series",
+                            "season": season_num,
+                            "episode": episode_num,
                             "stream": formatted_stream + HEADERS_SUFFIX
                         }
 
-    print(f"[✓] Dens.tv completed: {len(unique_episodes)} items collected.")
-
-    # 2. Retrieve FreeLiveSports Data
-    print("\n--- [2/2] Retrieving Data from FreeLiveSports ---")
-    fls_session = create_fls_session()
-    try:
-        print("[*] Performing FLS authentication...")
-        fls_token = fls_authenticate(fls_session)
-        print("[*] Retrieving the VOD list from the FLS homepage...")
-        fls_home_data = fls_get_home_data(fls_session, fls_token)
-        
-        fls_shows = []
-        def extract_fls_shows(obj):
-            if isinstance(obj, dict):
-                if "show_id" in obj and ("vanity_url" in obj or "show_name" in obj):
-                    fls_shows.append(obj)
-                for k, v in obj.items():
-                    extract_fls_shows(v)
-            elif isinstance(obj, list):
-                for item in obj:
-                    extract_fls_shows(item)
-                    
-        extract_fls_shows(fls_home_data)
-        fls_unique_shows = list({s["show_id"]: s for s in fls_shows}.values())
-        print(f"    Found {len(fls_unique_shows)} unique FLS VODs. Processing in parallel...")
-
-        fls_count = 0
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            futures = [executor.submit(process_fls_show, fls_session, fls_token, show) for show in fls_unique_shows]
-            for future in as_completed(futures):
-                result = future.result()
-                if result:
-                    item_key = f"fls_{result['id']}"
-                    if item_key not in unique_episodes:
-                        unique_episodes[item_key] = result
-                        fls_count += 1
-        print(f"[✓] FreeLiveSports complete: {fls_count} items successfully added.")
-    except Exception as e:
-        print(f"[!] Failed to process FreeLiveSports: {e}")
-
-    # 3. Write to M3U file
-    print("\n==================================================")
-    print(f"Writing a total of {len(unique_episodes)} items to series.m3u...")
-    print("==================================================")
-
     count = 0
     with open("series.m3u", "a", encoding="utf-8") as f:
-        for item_id, data in unique_episodes.items():
-            f.write(f'#EXTINF:-1 vod="1" type="{data["type"]}" content-type="{data["type"]}" tvg-id="{data["id"]}" tvg-name="{data["title"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+        for item_key, data in unique_episodes.items():
+            formatted_line_title = f"{data['serie_title']} S0{data['season']}E0{data['episode']} - {data['title']}" if len(data['episode']) == 1 else f"{data['serie_title']} S0{data['season']}E{data['episode']} - {data['title']}"
+            
+            f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="{data["tmdb_id"]}" serie-title="{data["serie_title"]}" tvg-season="{data["season"]}" tvg-episode="{data["episode"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{formatted_line_title}\n')
             f.write(f'{data["stream"]}\n\n')
             count += 1
+            print(f"[{count}] [✓] {formatted_line_title} (TMDB: {data['tmdb_id'] or 'Not Found'})")
 
-    print("==================================================")
-    print(f"[COMPLETED] A total of {count} items were successfully saved to series.m3u")
-    print("==================================================")
+    print("\n[COMPLETED] series.m3u Successfully Updated!")
 
 if __name__ == "__main__":
     main()
