@@ -187,6 +187,11 @@ def main():
                 
                 for m in movies:
                     m_id = m.get("movie_id")
+                    title = m.get("title", "")
+                    
+                    if "Episode" in title or "Episodes" in title or m.get("type") == "series" or "season" in m:
+                        continue
+
                     if m_id and m_id not in unique_movies:
                         raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "")
                         if not raw_stream:
@@ -199,10 +204,10 @@ def main():
                             poster = m.get("image", "")
 
                         if formatted_stream:
-                            tmdb_id = fetch_tmdb_id(m.get("title", ""), "movie")
+                            tmdb_id = fetch_tmdb_id(title, "movie")
                             unique_movies[m_id] = {
                                 "id": m_id,
-                                "title": m.get("title", ""),
+                                "title": title,
                                 "tmdb_id": tmdb_id,
                                 "poster": poster,
                                 "genre": m.get("_genre_name", genre["name"]),
