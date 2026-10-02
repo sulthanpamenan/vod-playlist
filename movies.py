@@ -14,11 +14,9 @@ HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 DAILYMOTION_ITEMS = [
     {"title": "Mohon Doa Restu (2023)", "id": "x9qtlim", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/4q8Q0GQS9v2ZeMJnNiq0Its8SE7.jpg"},
     {"title": "Laura (2024)", "id": "x9f73iq", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/zVZIcXVMFdbzTTHOThrZX7o2DO7.jpg"},
-    {"title": "Tujuh Hari Untuk Keshia (2025)", "id": "x9d736m", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/GnCJef0y75lyvI6AVRbRCaqWSi.jpg"},
     {"title": "Lovely Man (2011)", "id": "x917hi4", "genres": "Drama", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/2DpL6GyMRJEf6bgGvyWoyQeYlzu.jpg"},
     {"title": "Rumah Dinas Bapak (2024)", "id": "x9icyxk", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/qwfVe3no1A2sWtvP2tjYnsEe52i.jpg"},
-    {"title": "Merindu Cahaya De Amstel (2022)", "id": "x9a27nu", "genres": "Romance", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"},
-    {"title": "Pasutri Gaje (2024)", "id": "x9kg0yi", "genres": "Comedy", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/lY6Y2wNzOgSyLJrE8rzf8QmKZpG.jpg"}
+    {"title": "Merindu Cahaya De Amstel (2022)", "id": "x9a27nu", "genres": "Romance", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"}
 ]
 
 GENRES_MOVIE = [
@@ -71,20 +69,39 @@ SL_SESSION.set_option("http-headers", {
     "Referer": "https://www.dailymotion.com/"
 })
 
+def clean_movie_title(raw_title):
+    cleaned = re.sub(r'\s*\|\s*Rated.*$', '', raw_title, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\|\s*Not Rated.*$', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\(\d{4}\)', '', cleaned)
+    return cleaned.strip()
+
+TMDB_CACHE = {}
+
 def fetch_tmdb_id(title, media_type="movie"):
-    if not TMDB_API_KEY or TMDB_API_KEY == "f5b601ec011f9760c7fb6752670714cf":
+    if not TMDB_API_KEY:
         return ""
+    clean_title = clean_movie_title(title)
+    if not clean_title:
+        return ""
+        
+    if clean_title in TMDB_CACHE:
+        return TMDB_CACHE[clean_title]
+
     try:
-        clean_title = re.sub(r'\s*\(.*?\)', '', title).strip()
         url = f"https://api.themoviedb.org/3/search/{media_type}"
         params = {"api_key": TMDB_API_KEY, "query": clean_title}
+        
         res = requests.get(url, params=params, timeout=5)
         if res.status_code == 200:
             results = res.json().get("results", [])
             if results:
-                return str(results[0].get("id", ""))
+                tmdb_id = str(results[0].get("id", ""))
+                TMDB_CACHE[clean_title] = tmdb_id
+                return tmdb_id
     except Exception:
         pass
+    
+    TMDB_CACHE[clean_title] = ""
     return ""
 
 def format_stream_url(raw_url, content_id):
@@ -137,7 +154,7 @@ def get_movies_by_genre(genre_info):
                 page += 1
             else:
                 break
-        except Exception as e:
+        except Exception:
             break
     return all_movies
 
@@ -173,10 +190,10 @@ def main():
         for entry in dm_results:
             f.write(entry + "\n\n")
 
-    print("\n--- Processing Dens.tv Movies via API (Parallel) ---")
-    unique_movies = {}
+    print("\n--- Processing Dens.tv Movies via API ---")
+    raw_movies_list = []
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         future_to_genre = {executor.submit(get_movies_by_genre, g): g for g in GENRES_MOVIE}
         
         for future in as_completed(future_to_genre):
@@ -184,37 +201,49 @@ def main():
             try:
                 movies = future.result()
                 print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
-                
                 for m in movies:
-                    m_id = m.get("movie_id")
-                    title = m.get("title", "")
-                    
-                    if "Episode" in title or "Episodes" in title or m.get("type") == "series" or "season" in m:
-                        continue
-
-                    if m_id and m_id not in unique_movies:
-                        raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "")
-                        if not raw_stream:
-                            raw_stream = m.get("file", "")
-
-                        formatted_stream = format_stream_url(raw_stream, m_id)
-                        
-                        poster = m.get("url_handle", {}).get("img_port_large", "")
-                        if not poster:
-                            poster = m.get("image", "")
-
-                        if formatted_stream:
-                            tmdb_id = fetch_tmdb_id(title, "movie")
-                            unique_movies[m_id] = {
-                                "id": m_id,
-                                "title": title,
-                                "tmdb_id": tmdb_id,
-                                "poster": poster,
-                                "genre": m.get("_genre_name", genre["name"]),
-                                "stream": formatted_stream + HEADERS_SUFFIX
-                            }
+                    raw_movies_list.append((m, genre["name"]))
             except Exception as e:
                 print(f"    [!] Error processing genre {genre['name']}: {e}")
+
+    unique_movies = {}
+
+    def process_single_movie(item_tuple):
+        m, default_genre = item_tuple
+        m_id = m.get("movie_id")
+        title = m.get("title", "")
+        
+        if "Episode" in title or "Episodes" in title or "Eps" in title:
+            return None
+
+        if m_id and m_id not in unique_movies:
+            raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "") or m.get("file", "")
+            formatted_stream = format_stream_url(raw_stream, m_id)
+            
+            poster = m.get("url_handle", {}).get("img_port_large", "") or m.get("image", "")
+
+            if formatted_stream:
+                tmdb_id = fetch_tmdb_id(title, "movie")
+                return {
+                    "id": m_id,
+                    "title": title,
+                    "tmdb_id": tmdb_id,
+                    "poster": poster,
+                    "genre": m.get("_genre_name", default_genre),
+                    "stream": formatted_stream + HEADERS_SUFFIX
+                }
+        return None
+
+    print("\n[*] Processing metadata and TMDB mapping...")
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(process_single_movie, item) for item in raw_movies_list]
+        for future in as_completed(futures):
+            try:
+                res = future.result()
+                if res and res["id"] not in unique_movies:
+                    unique_movies[res["id"]] = res
+            except Exception as e:
+                print(f"    [!] Error in metadata thread: {e}")
 
     print(f"\n[✓] A total of {len(unique_movies)} Dens.tv movies successfully extracted!")
     print("==================================================")
