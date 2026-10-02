@@ -101,8 +101,10 @@ def process_fls_show(session, access_token, show):
         primary_category = categories[0].get("category_name", "Free Live Sports VOD") if categories else "Free Live Sports VOD"
         
         show_type = "movie"
+        tmdb_media_type = "movie"
         if "season" in details or details.get("single_video") == 0:
             show_type = "series"
+            tmdb_media_type = "tv"
 
         resolutions = details.get("resolutions", [])
         playlist_url = next((r.get("url") for r in resolutions if r.get("type") == "auto"), None)
@@ -127,15 +129,21 @@ def process_fls_show(session, access_token, show):
         ref = "https://freelivesports.tv/"
         stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
         
+        tmdb_id = fetch_tmdb_id(show_name, tmdb_media_type)
+        
         entry = {
             "id": str(show_id),
             "title": show_name,
+            "serie_title": show_name,
+            "tmdb_id": tmdb_id,
             "poster": logo,
             "genre": primary_category,
             "type": show_type,
+            "season": "1",
+            "episode": "1",
             "stream": stream_url_with_headers
         }
-        print(f"    [FLS ✓] {show_name} [{primary_category}]")
+        print(f"    [FLS ✓] {show_name} [{primary_category}] (TMDB: {tmdb_id or 'N/A'})")
         return entry
         
     except Exception as e:
@@ -143,20 +151,38 @@ def process_fls_show(session, access_token, show):
         return None
 
 # ================= DENS.TV FUNCTIONS =================
+def clean_series_title(raw_title):
+    cleaned = re.sub(r'\s*\|\s*Rated.*$', '', raw_title, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\|\s*Not Rated.*$', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\(\d{4}\)', '', cleaned)
+    return cleaned.strip()
+
+TMDB_CACHE = {}
+
 def fetch_tmdb_id(title, media_type="tv"):
-    if not TMDB_API_KEY or TMDB_API_KEY == "f5b601ec011f9760c7fb6752670714cf":
+    if not TMDB_API_KEY:
         return ""
+    clean_title = clean_series_title(title)
+    if not clean_title:
+        return ""
+        
+    if clean_title in TMDB_CACHE:
+        return TMDB_CACHE[clean_title]
+
     try:
-        clean_title = re.sub(r'\s*\(.*?\)', '', title).strip()
         url = f"https://api.themoviedb.org/3/search/{media_type}"
         params = {"api_key": TMDB_API_KEY, "query": clean_title}
         res = requests.get(url, params=params, timeout=5)
         if res.status_code == 200:
             results = res.json().get("results", [])
             if results:
-                return str(results[0].get("id", ""))
+                tmdb_id = str(results[0].get("id", ""))
+                TMDB_CACHE[clean_title] = tmdb_id
+                return tmdb_id
     except Exception:
         pass
+    
+    TMDB_CACHE[clean_title] = ""
     return ""
 
 def format_stream_url(raw_url, content_id):
@@ -191,8 +217,7 @@ def get_series_by_category(cat_id, cat_slug):
                 page += 1
             else:
                 break
-        except Exception as e:
-            print(f"    [!] Failed to fetch page {page} Dens.tv category {cat_slug}: {e}")
+        except Exception:
             break
     return all_series
 
@@ -211,8 +236,7 @@ def get_episodes_by_series(series_id, series_slug):
                 page += 1
             else:
                 break
-        except Exception as e:
-            print(f"    [!] Failed to retrieve episodes page {page} series Dens.tv {series_id}: {e}")
+        except Exception:
             break
     return all_episodes
 
@@ -239,7 +263,6 @@ def main():
         f.write("\n".join(header_content) + "\n\n")
 
     unique_episodes = {}
-    tmdb_cache = {}
     series_cache = {}
 
     # 1. Retrieve DENS.TV Data
@@ -271,9 +294,7 @@ def main():
             if not p_id:
                 continue
 
-            if p_title not in tmdb_cache:
-                tmdb_cache[p_title] = fetch_tmdb_id(p_title, "tv")
-            parent_tmdb_id = tmdb_cache[p_title]
+            parent_tmdb_id = fetch_tmdb_id(p_title, "tv")
 
             episodes = series_cache.get(p_id, [])
             if not episodes:
@@ -350,7 +371,7 @@ def main():
     except Exception as e:
         print(f"[!] Failed to process FreeLiveSports: {e}")
 
-     # 3. Write to M3U file
+    # 3. Write to M3U file
     print("\n==================================================")
     print(f"Writing a total of {len(unique_episodes)} items to series.m3u...")
     print("==================================================")
@@ -358,14 +379,15 @@ def main():
     count = 0
     with open("series.m3u", "a", encoding="utf-8") as f:
         for item_key, data in unique_episodes.items():
-            if data.get("type") == "series" and "episode" in data:
+            if data.get("type") == "series" and data.get("episode"):
                 ep_num = str(data['episode']).zfill(2)
                 season_num = str(data.get('season', '1')).zfill(2)
                 formatted_line_title = f"S{season_num}E{ep_num} - {data['title']}"
                 
                 f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="{data.get("tmdb_id", "")}" serie-title="{data["serie_title"]}" tvg-season="{season_num}" tvg-episode="{ep_num}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{formatted_line_title}\n')
             else:
-                f.write(f'#EXTINF:-1 vod="1" type="{data.get("type", "movie")}" content-type="{data.get("type", "movie")}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+                item_type = data.get("type", "movie")
+                f.write(f'#EXTINF:-1 vod="1" type="{item_type}" content-type="{item_type}" tvg-tmdb="{data.get("tmdb_id", "")}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
             
             f.write(f'{data["stream"]}\n\n')
             count += 1
