@@ -1,6 +1,6 @@
-import re
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
 import requests
