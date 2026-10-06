@@ -1,6 +1,8 @@
 import re
+import json
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
 import requests
 import streamlink
 import urllib3
@@ -37,18 +39,10 @@ GENRES_MOVIE = [
     {"name": "Horror & Thriller", "id": "7", "slug": "horror-thriller"},
     {"name": "Thriller", "id": "3477", "slug": "thriller"},
     {"name": "Cerita Indonesia", "id": "5501", "slug": "cerita-indonesia"},
-    {"name": "Food & Cooking", "id": "4570", "slug": "food"},
-    {"name": "Lifestyle & Travels", "id": "5764", "slug": "lifestyle-travels"},
-    {"name": "Music", "id": "5756", "slug": "music"},
-    {"name": "Variety Show", "id": "4712", "slug": "variety-show"},
-    {"name": "Sports", "id": "4713", "slug": "sports"},
-    {"name": "Motorvision TV", "id": "1766", "slug": "motorvision-tv-ondemand"},
     {"name": "My Cinema Europe", "id": "1908", "slug": "my-cinema-europe-ondemand"},
     {"name": "New Release", "id": "5551", "slug": "new-release"},
-    {"name": "New Production", "id": "5544", "slug": "new-production"},
     {"name": "Exclusive", "id": "3774", "slug": "exclusive"},
     {"name": "Free Content", "id": "3772", "slug": "free-content"},
-    {"name": "Others", "id": "4559", "slug": "others"},
 ]
 
 SESSION = requests.Session()
@@ -70,38 +64,73 @@ SL_SESSION.set_option("http-headers", {
 })
 
 def clean_movie_title(raw_title):
-    cleaned = re.sub(r'\s*\|\s*Rated.*$', '', raw_title, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*\|\s*Not Rated.*$', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', raw_title, flags=re.IGNORECASE)
     cleaned = re.sub(r'\s*\(\d{4}\)', '', cleaned)
-    return cleaned.strip()
+    cleaned = re.sub(r'[^\w\s]', ' ', cleaned)
+    return ' '.join(cleaned.split())
 
 TMDB_CACHE = {}
+TMDB_CACHE_FILE = "tmdb_cache.json"
 
-def fetch_tmdb_id(title, media_type="movie"):
+if os.path.exists(TMDB_CACHE_FILE):
+    try:
+        with open(TMDB_CACHE_FILE, "r", encoding="utf-8") as f:
+            TMDB_CACHE = json.load(f)
+    except Exception:
+        TMDB_CACHE = {}
+else:
+    TMDB_CACHE = {}
+
+def save_tmdb_cache():
+    try:
+        with open(TMDB_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(TMDB_CACHE, f, indent=4, ensure_ascii=False)
+    except Exception:
+        pass
+
+def fetch_tmdb_id(title, media_type="movie", year=None):
     if not TMDB_API_KEY:
         return ""
-    clean_title = clean_movie_title(title)
-    if not clean_title:
+    clean_t = clean_movie_title(title)
+    if not clean_t:
         return ""
         
-    if clean_title in TMDB_CACHE:
-        return TMDB_CACHE[clean_title]
+    cache_key = f"{clean_t}_{year}" if year else clean_t
+    
+    if cache_key in TMDB_CACHE:
+        return TMDB_CACHE[cache_key]
+
+    url = f"https://api.themoviedb.org/3/search/{media_type}"
 
     try:
-        url = f"https://api.themoviedb.org/3/search/{media_type}"
-        params = {"api_key": TMDB_API_KEY, "query": clean_title}
-        
+        # Layer 1: Use the filter format "y:year"
+        if year and year.isdigit():
+            query_with_year_filter = f"{clean_t} y:{year}"
+            params = {"api_key": TMDB_API_KEY, "query": query_with_year_filter}
+            res = requests.get(url, params=params, timeout=5)
+            if res.status_code == 200:
+                results = res.json().get("results", [])
+                if results:
+                    tmdb_id = str(results[0].get("id", ""))
+                    TMDB_CACHE[cache_key] = tmdb_id
+                    save_tmdb_cache()
+                    return tmdb_id
+
+        # Layer 2: Clean title search (backup)
+        params = {"api_key": TMDB_API_KEY, "query": clean_t}
         res = requests.get(url, params=params, timeout=5)
         if res.status_code == 200:
             results = res.json().get("results", [])
             if results:
                 tmdb_id = str(results[0].get("id", ""))
-                TMDB_CACHE[clean_title] = tmdb_id
+                TMDB_CACHE[cache_key] = tmdb_id
+                save_tmdb_cache()
                 return tmdb_id
     except Exception:
         pass
     
-    TMDB_CACHE[clean_title] = ""
+    TMDB_CACHE[cache_key] = ""
+    save_tmdb_cache()
     return ""
 
 def format_stream_url(raw_url, content_id):
@@ -164,8 +193,7 @@ def main():
     print("==================================================")
 
     header_content = [
-        "#EXTM3U",
-        "", "<html>", "<head>", '<meta charset="utf-8">',
+        "<!--more-->", "<html>", "<head>", '<meta charset="utf-8">',
         '<meta http-equiv="X-UA-Compatible" content="IE=edge">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<script language=\"javascript\">",
@@ -173,7 +201,7 @@ def main():
         "</script>", "</head></html>", "",
         "<================== PLAYLIST AUTOGENERATED BY SUTAN PAMENAN ==================>",
         "<================== IF YOU FIND THIS PLAYLIST, PLEASE DO NOT SELL OR DISTRIBUTE IT FOR PERSONAL GAIN ==================>",
-        ""
+        "", "#EXTM3U"
     ]
 
     with open("movies.m3u", "w", encoding="utf-8") as f:
@@ -181,7 +209,7 @@ def main():
 
     print("--- Processing Dailymotion Movies ---")
     dm_results = []
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         for res in executor.map(process_dailymotion_item, DAILYMOTION_ITEMS):
             if res:
                 dm_results.append(res)
@@ -190,10 +218,10 @@ def main():
         for entry in dm_results:
             f.write(entry + "\n\n")
 
-    print("\n--- Processing Dens.tv Movies via API ---")
+    print("\n--- Processing Dens.tv Movies ---")
     raw_movies_list = []
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
         future_to_genre = {executor.submit(get_movies_by_genre, g): g for g in GENRES_MOVIE}
         
         for future in as_completed(future_to_genre):
@@ -212,24 +240,45 @@ def main():
         m, default_genre = item_tuple
         m_id = m.get("movie_id")
         title = m.get("title", "")
+        movie_type = m.get("movie_type", "").upper()
+        year = str(m.get("year", ""))
+        description = m.get("description", "").replace("\n", " ").strip()
+        cast = m.get("cast", "").strip()
+        director = m.get("director", "").strip()
         
-        if "Episode" in title or "Episodes" in title or "Eps" in title:
+        keywords = m.get("keywords", [])
+        primary_genre = default_genre
+        for kw in keywords:
+            if kw.get("keyword_type", "").upper() == "GEN":
+                primary_genre = kw.get("keyword_name", "").strip()
+                break
+
+        if movie_type == "SERIES" or any(kw in title.lower() for kw in ["episode", "episodes", "eps"]):
             return None
 
         if m_id and m_id not in unique_movies:
             raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "") or m.get("file", "")
             formatted_stream = format_stream_url(raw_stream, m_id)
             
-            poster = m.get("url_handle", {}).get("img_port_large", "") or m.get("image", "")
+            poster = (m.get("url_handle", {}).get("img_port_large", "") or 
+                      m.get("url_handle", {}).get("img_land_large", "") or 
+                      m.get("image", ""))
+            if poster:
+                poster = quote(poster, safe=":/%")
 
             if formatted_stream:
-                tmdb_id = fetch_tmdb_id(title, "movie")
+                tmdb_id = fetch_tmdb_id(title, "movie", year)
+                
                 return {
                     "id": m_id,
                     "title": title,
                     "tmdb_id": tmdb_id,
                     "poster": poster,
-                    "genre": m.get("_genre_name", default_genre),
+                    "genre": primary_genre,
+                    "description": description,
+                    "cast": cast,
+                    "director": director,
+                    "year": year,
                     "stream": formatted_stream + HEADERS_SUFFIX
                 }
         return None
@@ -251,7 +300,11 @@ def main():
     count = 0
     with open("movies.m3u", "a", encoding="utf-8") as f:
         for m_id, data in unique_movies.items():
-            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{data["tmdb_id"]}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+            desc_attr = f' tvg-description="{data["description"]}"' if data["description"] else ''
+            director_attr = f' director="{data["director"]}"' if data["director"] and data["director"] != "-" else ''
+            cast_attr = f' cast="{data["cast"]}"' if data["cast"] and data["cast"] != "-" else ''
+            
+            f.write(f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{data["tmdb_id"]}"{desc_attr}{director_attr}{cast_attr} tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
             f.write(f'{data["stream"]}\n\n')
             count += 1
             print(f"[{count}/{len(unique_movies)}] [✓ SUCCESS] [{data['genre']}] {data['title']}")
