@@ -1,6 +1,8 @@
+import json
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
 import requests
 import urllib3
 from requests.adapters import HTTPAdapter
@@ -26,6 +28,7 @@ CATEGORIES = [
     {"name": "Music", "id": "5756", "slug": "music"},
     {"name": "Variety Show", "id": "4712", "slug": "variety-show"},
     {"name": "Sports & Hobbies", "id": "1118", "slug": "sports-and-hobbies"},
+    {"name": "Motorvision TV", "id": "1766", "slug": "motorvision-tv-ondemand"},
 ]
 
 SESSION_DENSTV = requests.Session()
@@ -78,7 +81,6 @@ def fls_get_home_data(session, token):
     if response.status_code == 200:
         return response.json()
     else:
-        print(f"    [!] Failed to retrieve FLS home data: {response.text}")
         return {}
 
 def process_fls_show(session, access_token, show):
@@ -86,6 +88,8 @@ def process_fls_show(session, access_token, show):
     show_name = show.get("show_name") or show.get("title") or "Unknown"
     vanity_url = show.get("vanity_url") or show.get("show_name")
     logo = show.get("logo") or show.get("thumbnail") or ""
+    if logo:
+        logo = quote(logo, safe=":/%")
 
     try:
         details_url = f"{FLS_BASE_URL}/api/v2/video/details/{requests.utils.quote(str(vanity_url))}?show_id={show_id}"
@@ -96,9 +100,7 @@ def process_fls_show(session, access_token, show):
             return None
             
         details = res_details.json().get("data", {})
-        
-        categories = details.get("categories", [])
-        primary_category = categories[0].get("category_name", "Free Live Sports VOD") if categories else "Free Live Sports VOD"
+        description = details.get("description", "")
         
         show_type = "movie"
         tmdb_media_type = "movie"
@@ -129,60 +131,111 @@ def process_fls_show(session, access_token, show):
         ref = "https://freelivesports.tv/"
         stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
         
-        tmdb_id = fetch_tmdb_id(show_name, tmdb_media_type)
+        clean_show_name = clean_series_title(show_name)
+        tmdb_id = ""
+        skip_tmdb = ["office hour", "sinema hits", "ngopi cantik", "kosan mbg", "petaka", "jelajah halal"]
+        if len(clean_show_name) > 4 and not any(kw in clean_show_name.lower() for kw in skip_tmdb):
+            tmdb_id = fetch_tmdb_id(show_name, tmdb_media_type)
         
         entry = {
             "id": str(show_id),
-            "title": show_name,
-            "serie_title": show_name,
+            "title": clean_show_name,
+            "serie_title": clean_show_name,
             "tmdb_id": tmdb_id,
             "poster": logo,
-            "genre": primary_category,
+            "genre": clean_show_name,
+            "description": description,
+            "cast": "",
+            "director": "",
             "type": show_type,
             "season": "1",
             "episode": "1",
             "stream": stream_url_with_headers
         }
-        print(f"    [FLS ✓] {show_name} [{primary_category}] (TMDB: {tmdb_id or 'N/A'})")
         return entry
-        
-    except Exception as e:
-        print(f"    [FLS ✗] Failed to process {show_name}: {e}")
+    except Exception:
         return None
 
 # ================= DENS.TV FUNCTIONS =================
 def clean_series_title(raw_title):
-    cleaned = re.sub(r'\s*\|\s*Rated.*$', '', raw_title, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*\|\s*Not Rated.*$', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', raw_title, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\(\d+\s*Episodes?\)', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*-\s*\d+\s*Episodes?', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\s*\(\d{4}\)', '', cleaned)
-    return cleaned.strip()
+    cleaned = re.sub(r'[^\w\s]', ' ', cleaned)
+    return ' '.join(cleaned.split())
+
+def clean_episode_title(ep_title, parent_title):
+    cleaned_ep = ep_title
+    base_parent_words = parent_title.split("(")[0].strip()
+    pattern_prefix = r'^' + re.escape(base_parent_words) + r'[\s\:\-\–\b]+(Eps\.?\s*\d+[\s\:\-\–\b]*)?'
+    cleaned_ep = re.sub(pattern_prefix, '', cleaned_ep, flags=re.IGNORECASE)
+    cleaned_ep = re.sub(r'^Eps\.?\s*\d+\s*[:\-–]\s*', '', cleaned_ep, flags=re.IGNORECASE)
+    cleaned_ep = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', cleaned_ep, flags=re.IGNORECASE)
+    return cleaned_ep.strip() if cleaned_ep.strip() else ep_title.strip()
 
 TMDB_CACHE = {}
+TMDB_CACHE_FILE = "tmdb_cache.json"
 
-def fetch_tmdb_id(title, media_type="tv"):
+if os.path.exists(TMDB_CACHE_FILE):
+    try:
+        with open(TMDB_CACHE_FILE, "r", encoding="utf-8") as f:
+            TMDB_CACHE = json.load(f)
+    except Exception:
+        TMDB_CACHE = {}
+else:
+    TMDB_CACHE = {}
+
+def save_tmdb_cache():
+    try:
+        with open(TMDB_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(TMDB_CACHE, f, indent=4, ensure_ascii=False)
+    except Exception:
+        pass
+
+def fetch_tmdb_id(title, media_type="movie", year=None):
     if not TMDB_API_KEY:
         return ""
-    clean_title = clean_series_title(title)
-    if not clean_title:
+    clean_t = clean_series_title(title)
+    if not clean_t:
         return ""
         
-    if clean_title in TMDB_CACHE:
-        return TMDB_CACHE[clean_title]
+    cache_key = f"{clean_t}_{year}" if year else clean_t
+    
+    if cache_key in TMDB_CACHE:
+        return TMDB_CACHE[cache_key]
+
+    url = f"https://api.themoviedb.org/3/search/{media_type}"
 
     try:
-        url = f"https://api.themoviedb.org/3/search/{media_type}"
-        params = {"api_key": TMDB_API_KEY, "query": clean_title}
+        # Layer 1: Use the filter format "y:year"
+        if year and year.isdigit():
+            query_with_year_filter = f"{clean_t} y:{year}"
+            params = {"api_key": TMDB_API_KEY, "query": query_with_year_filter}
+            res = requests.get(url, params=params, timeout=5)
+            if res.status_code == 200:
+                results = res.json().get("results", [])
+                if results:
+                    tmdb_id = str(results[0].get("id", ""))
+                    TMDB_CACHE[cache_key] = tmdb_id
+                    save_tmdb_cache()
+                    return tmdb_id
+
+        # Layer 2: Clean title search (backup)
+        params = {"api_key": TMDB_API_KEY, "query": clean_t}
         res = requests.get(url, params=params, timeout=5)
         if res.status_code == 200:
             results = res.json().get("results", [])
             if results:
                 tmdb_id = str(results[0].get("id", ""))
-                TMDB_CACHE[clean_title] = tmdb_id
+                TMDB_CACHE[cache_key] = tmdb_id
+                save_tmdb_cache()
                 return tmdb_id
     except Exception:
         pass
     
-    TMDB_CACHE[clean_title] = ""
+    TMDB_CACHE[cache_key] = ""
+    save_tmdb_cache()
     return ""
 
 def format_stream_url(raw_url, content_id):
@@ -247,16 +300,16 @@ def main():
     print("==================================================")
 
     header_content = [
-        "#EXTM3U",
-        "", "<html>", "<body>", '<meta charset="utf-8">',
+        "<!--more-->", "<html>", "<head>", '<meta charset="utf-8">',
         '<meta http-equiv="X-UA-Compatible" content="IE=edge">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<script language=\"javascript\">",
         'window.location.replace("https://sulthanpamenan.github.io/vod-playlist/");',
-        "</script>", "</body></html>", "",
+        "</script>", "</head></html>", "",
         "<================== PLAYLIST AUTOGENERATED BY SUTAN PAMENAN ==================>",
-        "<================== IF YOU FIND THIS PLAYLIST, PLEASE DO NOT SELL OR DISTRIBUTE FOR PERSONAL GAIN ==================>",
-        ""
+        "<================== IF YOU FIND THIS PLAYLIST, PLEASE DO NOT SELL OR DISTRIBUTE IT FOR PERSONAL GAIN ==================>",
+        "", "#EXTM3U"
+    ]
     ]
 
     with open("series.m3u", "w", encoding="utf-8") as f:
@@ -270,12 +323,11 @@ def main():
     for cat in CATEGORIES:
         print(f"[*] Dens.tv Category Fetching: {cat['name']}...")
         series_list = get_series_by_category(cat["id"], cat["slug"])
-        print(f"    Found {len(series_list)} items in category {cat['name']}")
         
         uncached_series = [s for s in series_list if s.get("movie_id") and s.get("movie_id") not in series_cache]
         
         if uncached_series:
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=20) as executor:
                 future_to_parent = {
                     executor.submit(get_episodes_by_series, s["movie_id"], s.get("slug", "")): s["movie_id"] 
                     for s in uncached_series if s.get("movie_id")
@@ -294,7 +346,20 @@ def main():
             if not p_id:
                 continue
 
-            parent_tmdb_id = fetch_tmdb_id(p_title, "tv")
+            clean_p_title = clean_series_title(p_title)
+            year = str(parent.get("year", ""))
+            
+            keywords = parent.get("keywords", [])
+            primary_genre = cat["name"]
+            for kw in keywords:
+                if kw.get("keyword_type", "").upper() == "GEN":
+                    primary_genre = kw.get("keyword_name", "").strip()
+                    break
+
+            tmdb_id = ""
+            skip_tmdb_keywords = ["office hour", "sinema hits", "ngopi cantik", "kosan mbg", "petaka", "jelajah halal"]
+            if len(clean_p_title) > 4 and not any(kw in clean_p_title.lower() for kw in skip_tmdb_keywords):
+                tmdb_id = fetch_tmdb_id(p_title, "tv", year)
 
             episodes = series_cache.get(p_id, [])
             if not episodes:
@@ -309,22 +374,31 @@ def main():
 
                     formatted_stream = format_stream_url(raw_stream, ep_id)
                     
-                    poster = ep.get("url_handle", {}).get("img_port_large", "")
-                    if not poster:
-                        poster = ep.get("image", "")
+                    poster = (ep.get("url_handle", {}).get("img_port_large", "") or 
+                              ep.get("url_handle", {}).get("img_land_large", "") or 
+                              ep.get("image", ""))
+                    if poster:
+                        poster = quote(poster, safe=":/%")
 
-                    ep_title = ep.get("title", p_title)
+                    raw_ep_title = ep.get("title", p_title)
+                    clean_ep_title = clean_episode_title(raw_ep_title, clean_p_title)
+                    description = ep.get("description", "").replace("\n", " ").strip()
+                    cast = ep.get("cast", "").strip()
+                    director = ep.get("director", "").strip()
                     season_num = str(ep.get("season", 1)) if ep.get("season") else "1"
                     episode_num = str(ep.get("episode", idx)) if ep.get("episode") else str(idx)
 
                     if formatted_stream:
                         unique_episodes[ep_id] = {
                             "id": str(ep_id),
-                            "title": ep_title,
-                            "serie_title": p_title,
-                            "tmdb_id": parent_tmdb_id,
+                            "title": clean_ep_title,
+                            "serie_title": clean_p_title,
+                            "tmdb_id": tmdb_id,
                             "poster": poster,
-                            "genre": cat["name"],
+                            "genre": primary_genre,
+                            "description": description,
+                            "cast": cast,
+                            "director": director,
                             "type": "series",
                             "season": season_num,
                             "episode": episode_num,
@@ -379,15 +453,19 @@ def main():
     count = 0
     with open("series.m3u", "a", encoding="utf-8") as f:
         for item_key, data in unique_episodes.items():
+            desc_attr = f' tvg-description="{data["description"]}"' if data["description"] else ''
+            director_attr = f' director="{data["director"]}"' if data["director"] and data["director"] != "-" else ''
+            cast_attr = f' cast="{data["cast"]}"' if data["cast"] and data["cast"] != "-" else ''
+
             if data.get("type") == "series" and data.get("episode"):
                 ep_num = str(data['episode']).zfill(2)
                 season_num = str(data.get('season', '1')).zfill(2)
                 formatted_line_title = f"S{season_num}E{ep_num} - {data['title']}"
                 
-                f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="{data.get("tmdb_id", "")}" serie-title="{data["serie_title"]}" tvg-season="{season_num}" tvg-episode="{ep_num}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{formatted_line_title}\n')
+                f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="{data.get("tmdb_id", "")}"{desc_attr}{director_attr}{cast_attr} serie-title="{data["serie_title"]}" tvg-season="{season_num}" tvg-episode="{ep_num}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{formatted_line_title}\n')
             else:
                 item_type = data.get("type", "movie")
-                f.write(f'#EXTINF:-1 vod="1" type="{item_type}" content-type="{item_type}" tvg-tmdb="{data.get("tmdb_id", "")}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
+                f.write(f'#EXTINF:-1 vod="1" type="{item_type}" content-type="{item_type}" tvg-tmdb="{data.get("tmdb_id", "")}"{desc_attr}{director_attr}{cast_attr} tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
             
             f.write(f'{data["stream"]}\n\n')
             count += 1
