@@ -310,7 +310,6 @@ def main():
         "<================== IF YOU FIND THIS PLAYLIST, PLEASE DO NOT SELL OR DISTRIBUTE IT FOR PERSONAL GAIN ==================>",
         "", "#EXTM3U"
     ]
-    ]
 
     with open("series.m3u", "w", encoding="utf-8") as f:
         f.write("\n".join(header_content) + "\n\n")
