@@ -1,12 +1,13 @@
-import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
+from urllib.parse import quote
 import requests
 import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+from utils import fetch_tmdb_id, format_stream_url, clean_title
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -36,7 +37,6 @@ SESSION_DENSTV.verify = False
 adapter_dens = HTTPAdapter(pool_connections=20, pool_maxsize=20)
 SESSION_DENSTV.mount("https://", adapter_dens)
 SESSION_DENSTV.mount("http://", adapter_dens)
-
 SESSION_DENSTV.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     "Referer": "https://www.dens.tv/",
@@ -47,18 +47,24 @@ SESSION_DENSTV.headers.update({
 FLS_BASE_URL = "https://api.gizmott.com"
 FLS_HEADERS = {
     "accept": "application/json, text/plain, */*",
+    "accept-language": "id,en-US;q=0.9,en;q=0.8",
+    "access-control-allow-origin": "true",
     "channelid": "516",
     "country_code": "ID",
+    "crossorigin": "true",
     "dev_id": "5d01d64ac5b0026957052f0330129fc6",
     "device_type": "web",
+    "ip": "223.255.224.124",
     "pubid": "50183",
     "origin": "https://freelivesports.tv",
     "referer": "https://freelivesports.tv/",
+    "uid": "7938114",
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
 }
 
 def create_fls_session():
     session = requests.Session()
+    session.verify = False
     retries = Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
     adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=20)
     session.mount("https://", adapter)
@@ -86,84 +92,117 @@ def fls_get_home_data(session, token):
 def process_fls_show(session, access_token, show):
     show_id = show.get("show_id")
     show_name = show.get("show_name") or show.get("title") or "Unknown"
-    vanity_url = show.get("vanity_url") or show.get("show_name")
+    vanity_url = show.get("vanity_url") or show_name
     logo = show.get("logo") or show.get("thumbnail") or ""
     if logo:
         logo = quote(logo, safe=":/%")
 
     try:
-        details_url = f"{FLS_BASE_URL}/api/v2/video/details/{requests.utils.quote(str(vanity_url))}?show_id={show_id}"
-        headers = {"access-token": access_token, "uid": "7938114"}
+        details_url = f"{FLS_BASE_URL}/api/v2/show/details/{requests.utils.quote(str(vanity_url))}"
+        headers = {
+            "access-token": access_token, 
+            "uid": "7938114",
+            "channelid": "516",
+            "pubid": "50183",
+            "device_type": "web"
+        }
         
         res_details = session.get(details_url, headers=headers, timeout=10)
         if res_details.status_code != 200:
             return None
             
         details = res_details.json().get("data", {})
-        description = details.get("description", "")
-        
-        show_type = "movie"
-        tmdb_media_type = "movie"
-        if "season" in details or details.get("single_video") == 0:
-            show_type = "series"
-            tmdb_media_type = "tv"
+        if not isinstance(details, dict):
+            details = {}
 
-        resolutions = details.get("resolutions", [])
-        playlist_url = next((r.get("url") for r in resolutions if r.get("type") == "auto"), None)
-        if not playlist_url and resolutions:
-            playlist_url = resolutions[0].get("url")
-            
-        if not playlist_url:
+        videos_data = details.get("videos", [])
+        episodes_data = videos_data if isinstance(videos_data, list) else []
+        if not episodes_data and isinstance(details.get("up_next"), list):
+            episodes_data = details.get("up_next")
+
+        is_series_pattern = bool(re.search(r's\d+|season|ep|episode|part', show_name, re.IGNORECASE))
+        if not is_series_pattern and details.get("season") is None and len(episodes_data) == 0:
             return None
 
-        token_url = f"{FLS_BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(playlist_url, safe='')}"
-        res_token = session.get(token_url, headers=headers, timeout=10)
-        if res_token.status_code != 200:
-            return None
+        description = details.get("synopsis") or details.get("description", "")
+        director = details.get("director", "") or ""
+        cast = details.get("show_cast", "") or ""
+        
+        categories = details.get("categories", [])
+        genres_list = [cat.get("category_name") for cat in categories if isinstance(cat, dict) and cat.get("category_name")]
+        genre = genres_list[0] if genres_list else clean_title(show_name)
+
+        entries = []
+        target_episodes = episodes_data if episodes_data else [details]
+
+        for idx, ep in enumerate(target_episodes, start=1):
+            if not isinstance(ep, dict):
+                continue
+                
+            season_num = str(ep.get("season") or details.get("season") or 1)
+            ep_vanity = ep.get("vanity_url") or vanity_url
+            ep_id = ep.get("video_id") or ep.get("show_id") or show_id
+            if not ep_id:
+                continue
+                
+            ep_title = ep.get("video_title") or ep.get("show_name") or f"{show_name} S{season_num}E{idx:02d}"
+            ep_desc = ep.get("video_description") or ep.get("synopsis") or description
             
-        stream_token = res_token.json().get("data")
-        if not stream_token:
-            return None
+            vid_details_url = f"{FLS_BASE_URL}/api/v2/video/details/{requests.utils.quote(str(ep_vanity))}?show_id={show_id}"
+            res_vid = session.get(vid_details_url, headers=headers, timeout=10)
+            if res_vid.status_code != 200:
+                continue
+                
+            vid_data = res_vid.json().get("data", {})
+            if not isinstance(vid_data, dict):
+                continue
+                
+            resolutions = vid_data.get("resolutions", [])
+            playlist_url = next((r.get("url") for r in resolutions if isinstance(r, dict) and r.get("type") == "auto"), None)
+            if not playlist_url and resolutions and isinstance(resolutions[0], dict):
+                playlist_url = resolutions[0].get("url")
+                
+            if not playlist_url:
+                continue
+
+            token_url = f"{FLS_BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(str(playlist_url), safe='')}"
+            res_token = session.get(token_url, headers=headers, timeout=10)
+            if res_token.status_code != 200:
+                continue
+                
+            stream_token = res_token.json().get("data")
+            if not stream_token:
+                continue
+                
+            final_m3u8_url = f"{FLS_BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
             
-        final_m3u8_url = f"{FLS_BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
-        
-        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
-        ref = "https://freelivesports.tv/"
-        stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
-        
-        clean_show_name = clean_series_title(show_name)
-        tmdb_id = ""
-        skip_tmdb = ["office hour", "sinema hits", "ngopi cantik", "kosan mbg", "petaka", "jelajah halal"]
-        if len(clean_show_name) > 4 and not any(kw in clean_show_name.lower() for kw in skip_tmdb):
-            tmdb_id = fetch_tmdb_id(show_name, tmdb_media_type)
-        
-        entry = {
-            "id": str(show_id),
-            "title": clean_show_name,
-            "serie_title": clean_show_name,
-            "tmdb_id": tmdb_id,
-            "poster": logo,
-            "genre": clean_show_name,
-            "description": description,
-            "cast": "",
-            "director": "",
-            "type": show_type,
-            "season": "1",
-            "episode": "1",
-            "stream": stream_url_with_headers
-        }
-        return entry
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+            ref = "https://freelivesports.tv/"
+            stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
+            
+            clean_show_name = clean_title(show_name)
+            ep_order = str(ep.get("video_order") or idx)
+            
+            entry = {
+                "id": str(ep_id),
+                "title": ep_title,
+                "serie_title": clean_show_name,
+                "tmdb_id": "",
+                "poster": logo,
+                "genre": genre,
+                "description": str(ep_desc).replace("\n", " ").strip(),
+                "cast": cast,
+                "director": director,
+                "type": "series",
+                "season": season_num,
+                "episode": ep_order,
+                "stream": stream_url_with_headers
+            }
+            entries.append(entry)
+            
+        return entries if entries else None
     except Exception:
         return None
-
-# ================= DENS.TV FUNCTIONS =================
-def clean_series_title(raw_title):
-    cleaned = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', raw_title, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*\(\d+\s*Episodes?\)', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*-\s*\d+\s*Episodes?', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*\(\d{4}\)', '', cleaned)
-    cleaned = re.sub(r'[^\w\s]', ' ', cleaned)
-    return ' '.join(cleaned.split())
 
 def clean_episode_title(ep_title, parent_title):
     cleaned_ep = ep_title
@@ -173,86 +212,6 @@ def clean_episode_title(ep_title, parent_title):
     cleaned_ep = re.sub(r'^Eps\.?\s*\d+\s*[:\-–]\s*', '', cleaned_ep, flags=re.IGNORECASE)
     cleaned_ep = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', cleaned_ep, flags=re.IGNORECASE)
     return cleaned_ep.strip() if cleaned_ep.strip() else ep_title.strip()
-
-TMDB_CACHE = {}
-TMDB_CACHE_FILE = "tmdb_cache.json"
-
-if os.path.exists(TMDB_CACHE_FILE):
-    try:
-        with open(TMDB_CACHE_FILE, "r", encoding="utf-8") as f:
-            TMDB_CACHE = json.load(f)
-    except Exception:
-        TMDB_CACHE = {}
-else:
-    TMDB_CACHE = {}
-
-def save_tmdb_cache():
-    try:
-        with open(TMDB_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(TMDB_CACHE, f, indent=4, ensure_ascii=False)
-    except Exception:
-        pass
-
-def fetch_tmdb_id(title, media_type="movie", year=None):
-    if not TMDB_API_KEY:
-        return ""
-    clean_t = clean_series_title(title)
-    if not clean_t:
-        return ""
-        
-    cache_key = f"{clean_t}_{year}" if year else clean_t
-    
-    if cache_key in TMDB_CACHE:
-        return TMDB_CACHE[cache_key]
-
-    url = f"https://api.themoviedb.org/3/search/{media_type}"
-
-    try:
-        # Layer 1: Use the filter format "y:year"
-        if year and year.isdigit():
-            query_with_year_filter = f"{clean_t} y:{year}"
-            params = {"api_key": TMDB_API_KEY, "query": query_with_year_filter}
-            res = requests.get(url, params=params, timeout=5)
-            if res.status_code == 200:
-                results = res.json().get("results", [])
-                if results:
-                    tmdb_id = str(results[0].get("id", ""))
-                    TMDB_CACHE[cache_key] = tmdb_id
-                    save_tmdb_cache()
-                    return tmdb_id
-
-        # Layer 2: Clean title search (backup)
-        params = {"api_key": TMDB_API_KEY, "query": clean_t}
-        res = requests.get(url, params=params, timeout=5)
-        if res.status_code == 200:
-            results = res.json().get("results", [])
-            if results:
-                tmdb_id = str(results[0].get("id", ""))
-                TMDB_CACHE[cache_key] = tmdb_id
-                save_tmdb_cache()
-                return tmdb_id
-    except Exception:
-        pass
-    
-    TMDB_CACHE[cache_key] = ""
-    save_tmdb_cache()
-    return ""
-
-def format_stream_url(raw_url, content_id):
-    if not raw_url:
-        return ""
-    parsed = urlparse(raw_url)
-    path = re.sub(r"/S\d+/[^/]+\.m3u8", "/index5.m3u8", parsed.path)
-    path = re.sub(r"/mnf\.m3u8", "/index5.m3u8", path)
-    path = re.sub(r"/index\d+\.m3u8", "/index5.m3u8", path)
-
-    query_dict = parse_qs(parsed.query)
-    query_dict["app_type"] = ["web"]
-    query_dict["userid"] = [USER_ID_TARGET]
-    if content_id:
-        query_dict["movieid"] = [str(content_id)]
-
-    return urlunparse(parsed._replace(path=path, query=urlencode(query_dict, doseq=True)))
 
 def get_series_by_category(cat_id, cat_slug):
     all_series = []
@@ -293,7 +252,6 @@ def get_episodes_by_series(series_id, series_slug):
             break
     return all_episodes
 
-# ================= MAIN =================
 def main():
     print("==================================================")
     print("[UNIFIED VOD SCRAPER] Dens.tv & FreeLiveSports...")
@@ -317,7 +275,6 @@ def main():
     unique_episodes = {}
     series_cache = {}
 
-    # 1. Retrieve DENS.TV Data
     print("\n--- [1/2] Retrieving Data from Dens.tv ---")
     for cat in CATEGORIES:
         print(f"[*] Dens.tv Category Fetching: {cat['name']}...")
@@ -345,7 +302,7 @@ def main():
             if not p_id:
                 continue
 
-            clean_p_title = clean_series_title(p_title)
+            clean_p_title = clean_title(p_title)
             year = str(parent.get("year", ""))
             
             keywords = parent.get("keywords", [])
@@ -358,7 +315,7 @@ def main():
             tmdb_id = ""
             skip_tmdb_keywords = ["office hour", "sinema hits", "ngopi cantik", "kosan mbg", "petaka", "jelajah halal"]
             if len(clean_p_title) > 4 and not any(kw in clean_p_title.lower() for kw in skip_tmdb_keywords):
-                tmdb_id = fetch_tmdb_id(p_title, "tv", year)
+                tmdb_id = fetch_tmdb_id(p_title, TMDB_API_KEY, "tv", year)
 
             episodes = series_cache.get(p_id, [])
             if not episodes:
@@ -367,11 +324,8 @@ def main():
             for idx, ep in enumerate(episodes, start=1):
                 ep_id = ep.get("movie_id")
                 if ep_id and ep_id not in unique_episodes:
-                    raw_stream = ep.get("extra", {}).get("stream", {}).get("play_url", "")
-                    if not raw_stream:
-                        raw_stream = ep.get("file", "")
-
-                    formatted_stream = format_stream_url(raw_stream, ep_id)
+                    raw_stream = ep.get("extra", {}).get("stream", {}).get("play_url", "") or ep.get("file", "")
+                    formatted_stream = format_stream_url(raw_stream, ep_id, USER_ID_TARGET)
                     
                     poster = (ep.get("url_handle", {}).get("img_port_large", "") or 
                               ep.get("url_handle", {}).get("img_land_large", "") or 
@@ -406,7 +360,6 @@ def main():
 
     print(f"[✓] Dens.tv completed: {len(unique_episodes)} items collected.")
 
-    # 2. Retrieve FreeLiveSports Data
     print("\n--- [2/2] Retrieving Data from FreeLiveSports ---")
     fls_session = create_fls_session()
     try:
@@ -425,26 +378,43 @@ def main():
             elif isinstance(obj, list):
                 for item in obj:
                     extract_fls_shows(item)
-                    
-        extract_fls_shows(fls_home_data)
-        fls_unique_shows = list({s["show_id"]: s for s in fls_shows}.values())
+
+        if isinstance(fls_home_data, dict):
+            extract_fls_shows(fls_home_data.get("data", fls_home_data))
+        elif isinstance(fls_home_data, list):
+            extract_fls_shows(fls_home_data)
+
+        fls_unique_shows = []
+        seen_show_ids = set()
+        for s in fls_shows:
+            if isinstance(s, dict) and "show_id" in s:
+                s_id = s["show_id"]
+                if s_id not in seen_show_ids:
+                    seen_show_ids.add(s_id)
+                    fls_unique_shows.append(s)
+
         print(f"    Found {len(fls_unique_shows)} unique FLS VODs. Processing in parallel...")
 
         fls_count = 0
         with ThreadPoolExecutor(max_workers=20) as executor:
             futures = [executor.submit(process_fls_show, fls_session, fls_token, show) for show in fls_unique_shows]
             for future in as_completed(futures):
-                result = future.result()
-                if result:
-                    item_key = f"fls_{result['id']}"
-                    if item_key not in unique_episodes:
-                        unique_episodes[item_key] = result
-                        fls_count += 1
+                try:
+                    result = future.result()
+                    if result and isinstance(result, list):
+                        for res_item in result:
+                            if isinstance(res_item, dict) and "id" in res_item:
+                                item_key = f"fls_{res_item['id']}"
+                                if item_key not in unique_episodes:
+                                    unique_episodes[item_key] = res_item
+                                    fls_count += 1
+                except Exception as ex:
+                    print(f"    [!] Error parsing FLS future result: {ex}")
+
         print(f"[✓] FreeLiveSports complete: {fls_count} items successfully added.")
     except Exception as e:
         print(f"[!] Failed to process FreeLiveSports: {e}")
 
-    # 3. Write to M3U file
     print("\n==================================================")
     print(f"Writing a total of {len(unique_episodes)} items to series.m3u...")
     print("==================================================")
