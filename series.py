@@ -5,9 +5,18 @@ from urllib.parse import quote
 import requests
 import urllib3
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-from utils import fetch_tmdb_id, format_stream_url, clean_title
+from utils import (
+    fetch_tmdb_id, 
+    format_stream_url, 
+    clean_title, 
+    clean_episode_title, 
+    save_tmdb_cache, 
+    create_fls_session, 
+    fls_authenticate, 
+    fls_get_home_data, 
+    FLS_BASE_URL
+)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -42,52 +51,6 @@ SESSION_DENSTV.headers.update({
     "Referer": "https://www.dens.tv/",
     "Accept": "*/*"
 })
-
-# ================= CONFIGURASI FREELIVESPORTS =================
-FLS_BASE_URL = "https://api.gizmott.com"
-FLS_HEADERS = {
-    "accept": "application/json, text/plain, */*",
-    "accept-language": "id,en-US;q=0.9,en;q=0.8",
-    "access-control-allow-origin": "true",
-    "channelid": "516",
-    "country_code": "ID",
-    "crossorigin": "true",
-    "dev_id": "5d01d64ac5b0026957052f0330129fc6",
-    "device_type": "web",
-    "ip": "223.255.224.124",
-    "pubid": "50183",
-    "origin": "https://freelivesports.tv",
-    "referer": "https://freelivesports.tv/",
-    "uid": "7938114",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
-}
-
-def create_fls_session():
-    session = requests.Session()
-    session.verify = False
-    retries = Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
-    adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=20)
-    session.mount("https://", adapter)
-    session.headers.update(FLS_HEADERS)
-    return session
-
-def fls_authenticate(session):
-    url = f"{FLS_BASE_URL}/api/v1/account/authenticate"
-    headers = {"uid": "7938114"}
-    response = session.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("token")
-    else:
-        raise Exception(f"FLS authentication failed: {response.text}")
-
-def fls_get_home_data(session, token):
-    url = f"{FLS_BASE_URL}/api/v2/home"
-    headers = {"access-token": token, "uid": "7938114"}
-    response = session.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return {}
 
 def process_fls_show(session, access_token, show):
     show_id = show.get("show_id")
@@ -203,15 +166,6 @@ def process_fls_show(session, access_token, show):
         return entries if entries else None
     except Exception:
         return None
-
-def clean_episode_title(ep_title, parent_title):
-    cleaned_ep = ep_title
-    base_parent_words = parent_title.split("(")[0].strip()
-    pattern_prefix = r'^' + re.escape(base_parent_words) + r'[\s\:\-\–\b]+(Eps\.?\s*\d+[\s\:\-\–\b]*)?'
-    cleaned_ep = re.sub(pattern_prefix, '', cleaned_ep, flags=re.IGNORECASE)
-    cleaned_ep = re.sub(r'^Eps\.?\s*\d+\s*[:\-–]\s*', '', cleaned_ep, flags=re.IGNORECASE)
-    cleaned_ep = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', cleaned_ep, flags=re.IGNORECASE)
-    return cleaned_ep.strip() if cleaned_ep.strip() else ep_title.strip()
 
 def get_series_by_category(cat_id, cat_slug):
     all_series = []
@@ -414,6 +368,8 @@ def main():
         print(f"[✓] FreeLiveSports complete: {fls_count} items successfully added.")
     except Exception as e:
         print(f"[!] Failed to process FreeLiveSports: {e}")
+
+    save_tmdb_cache()
 
     print("\n==================================================")
     print(f"Writing a total of {len(unique_episodes)} items to series.m3u...")
