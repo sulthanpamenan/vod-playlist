@@ -1,14 +1,18 @@
-import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
+from urllib.parse import quote
 import requests
 import streamlink
 import urllib3
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+from utils import fetch_tmdb_id, format_stream_url, clean_title
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# ================= CONFIGURASI =================
 USER_ID_TARGET = "wnctpm5uf2j"
 TMDB_API_KEY = "f5b601ec011f9760c7fb6752670714cf"
 HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36&Origin=https://www.dens.tv&Referer=https://www.dens.tv/"
@@ -21,7 +25,7 @@ DAILYMOTION_ITEMS = [
     {"title": "Merindu Cahaya De Amstel (2022)", "id": "x9a27nu", "genres": "Romance", "type": "movie", "logo": "https://image.tmdb.org/t/p/original/uxD1hucihvTToMEoK9HCKkEQiq4.jpg"}
 ]
 
-GENRES_MOVIE = [
+DENS_MOVIE = [
     {"name": "Action", "id": "8", "slug": "action"},
     {"name": "Action Adventure", "id": "2896", "slug": "action-adventure"},
     {"name": "Action Crime", "id": "3492", "slug": "action-crime"},
@@ -45,17 +49,53 @@ GENRES_MOVIE = [
     {"name": "Free Content", "id": "3772", "slug": "free-content"},
 ]
 
-SESSION = requests.Session()
-SESSION.verify = False
-adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
-SESSION.mount("https://", adapter)
-SESSION.mount("http://", adapter)
-
-SESSION.headers.update({
+SESSION_DENSTV = requests.Session()
+SESSION_DENSTV.verify = False
+adapter_dens = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+SESSION_DENSTV.mount("https://", adapter_dens)
+SESSION_DENSTV.mount("http://", adapter_dens)
+SESSION_DENSTV.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     "Referer": "https://www.dens.tv/",
     "Accept": "*/*"
 })
+
+FLS_BASE_URL = "https://api.gizmott.com"
+FLS_HEADERS = {
+    "accept": "application/json, text/plain, */*",
+    "accept-language": "id,en-US;q=0.9,en;q=0.8",
+    "access-control-allow-origin": "true",
+    "channelid": "516",
+    "country_code": "ID",
+    "crossorigin": "true",
+    "dev_id": "a390d35935634d6173bf7148665a1a0e",
+    "device_type": "web",
+    "ip": "223.255.224.124",
+    "origin": "https://freelivesports.tv",
+    "pubid": "50183",
+    "referer": "https://freelivesports.tv/",
+    "uid": "7938114",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+}
+
+def create_fls_session():
+    session = requests.Session()
+    session.verify = False
+    retries = Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
+    adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=20)
+    session.mount("https://", adapter)
+    session.headers.update(FLS_HEADERS)
+    return session
+
+def fls_authenticate(session):
+    url = f"{FLS_BASE_URL}/api/v1/account/authenticate"
+    try:
+        res = session.get(url, timeout=10)
+        if res.status_code == 200:
+            return res.json().get("token")
+    except Exception:
+        pass
+    return None
 
 SL_SESSION = streamlink.Streamlink()
 SL_SESSION.set_option("http-headers", {
@@ -63,98 +103,12 @@ SL_SESSION.set_option("http-headers", {
     "Referer": "https://www.dailymotion.com/"
 })
 
-def clean_movie_title(raw_title):
-    cleaned = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', raw_title, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*\(\d{4}\)', '', cleaned)
-    cleaned = re.sub(r'[^\w\s]', ' ', cleaned)
-    return ' '.join(cleaned.split())
-
-TMDB_CACHE = {}
-TMDB_CACHE_FILE = "tmdb_cache.json"
-
-if os.path.exists(TMDB_CACHE_FILE):
-    try:
-        with open(TMDB_CACHE_FILE, "r", encoding="utf-8") as f:
-            TMDB_CACHE = json.load(f)
-    except Exception:
-        TMDB_CACHE = {}
-else:
-    TMDB_CACHE = {}
-
-def save_tmdb_cache():
-    try:
-        with open(TMDB_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(TMDB_CACHE, f, indent=4, ensure_ascii=False)
-    except Exception:
-        pass
-
-def fetch_tmdb_id(title, media_type="movie", year=None):
-    if not TMDB_API_KEY:
-        return ""
-    clean_t = clean_movie_title(title)
-    if not clean_t:
-        return ""
-        
-    cache_key = f"{clean_t}_{year}" if year else clean_t
-    
-    if cache_key in TMDB_CACHE:
-        return TMDB_CACHE[cache_key]
-
-    url = f"https://api.themoviedb.org/3/search/{media_type}"
-
-    try:
-        # Layer 1: Use the filter format "y:year"
-        if year and year.isdigit():
-            query_with_year_filter = f"{clean_t} y:{year}"
-            params = {"api_key": TMDB_API_KEY, "query": query_with_year_filter}
-            res = requests.get(url, params=params, timeout=5)
-            if res.status_code == 200:
-                results = res.json().get("results", [])
-                if results:
-                    tmdb_id = str(results[0].get("id", ""))
-                    TMDB_CACHE[cache_key] = tmdb_id
-                    save_tmdb_cache()
-                    return tmdb_id
-
-        # Layer 2: Clean title search (backup)
-        params = {"api_key": TMDB_API_KEY, "query": clean_t}
-        res = requests.get(url, params=params, timeout=5)
-        if res.status_code == 200:
-            results = res.json().get("results", [])
-            if results:
-                tmdb_id = str(results[0].get("id", ""))
-                TMDB_CACHE[cache_key] = tmdb_id
-                save_tmdb_cache()
-                return tmdb_id
-    except Exception:
-        pass
-    
-    TMDB_CACHE[cache_key] = ""
-    save_tmdb_cache()
-    return ""
-
-def format_stream_url(raw_url, content_id):
-    if not raw_url:
-        return ""
-    parsed = urlparse(raw_url)
-    path = re.sub(r"/S\d+/[^/]+\.m3u8", "/index5.m3u8", parsed.path)
-    path = re.sub(r"/mnf\.m3u8", "/index5.m3u8", path)
-    path = re.sub(r"/index\d+\.m3u8", "/index5.m3u8", path)
-
-    query_dict = parse_qs(parsed.query)
-    query_dict["app_type"] = ["web"]
-    query_dict["userid"] = [USER_ID_TARGET]
-    if content_id:
-        query_dict["movieid"] = [str(content_id)]
-
-    return urlunparse(parsed._replace(path=path, query=urlencode(query_dict, doseq=True)))
-
 def process_dailymotion_item(item):
     try:
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
-            tmdb_id = fetch_tmdb_id(item["title"], "movie")
+            tmdb_id = fetch_tmdb_id(item["title"], TMDB_API_KEY, "movie")
             meta = f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{tmdb_id}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
             return f"{meta}\n{url}"
     except Exception as e:
@@ -171,7 +125,7 @@ def get_movies_by_genre(genre_info):
     while True:
         url = f"https://www.dens.tv/movie/related/{genre_id}/{genre_slug}?page={page}&limit=50&json=true"
         try:
-            res = SESSION.get(url, timeout=10)
+            res = SESSION_DENSTV.get(url, timeout=10)
             if res.status_code == 200:
                 data = res.json().get("data", {})
                 movies = data.get("movies", []) or data.get("series", [])
@@ -186,6 +140,87 @@ def get_movies_by_genre(genre_info):
         except Exception:
             break
     return all_movies
+
+def process_fls_movie(session, access_token, show):
+    show_id = show.get("show_id")
+    show_name = show.get("show_name") or show.get("title") or "Unknown"
+    vanity_url = show.get("vanity_url") or show_name
+    logo = show.get("logo") or show.get("thumbnail") or ""
+    if logo:
+        logo = quote(logo, safe=":/%")
+
+    try:
+        details_url = f"{FLS_BASE_URL}/api/v2/show/details/{requests.utils.quote(str(vanity_url))}"
+        headers = {"access-token": access_token, "uid": "7938114", "channelid": "516", "pubid": "50183"}
+        
+        res_details = session.get(details_url, headers=headers, timeout=10)
+        if res_details.status_code != 200:
+            return None
+            
+        details = res_details.json().get("data", {})
+        if details.get("single_video") != 1:
+            return None
+
+        description = details.get("synopsis") or details.get("description", "")
+        year = str(details.get("year", ""))
+        director = details.get("director", "") or ""
+        cast = details.get("show_cast", "") or details.get("cast", "") or ""
+
+        categories = details.get("categories", [])
+        genres_list = [cat.get("category_name") for cat in categories if cat.get("category_name")]
+        genre = genres_list[0] if genres_list else "Sports"
+
+        videos_list = details.get("videos", [])
+        if not videos_list:
+            return None
+            
+        video_item = videos_list[0]
+        video_vanity = video_item.get("vanity_url") or vanity_url
+        
+        vid_details_url = f"{FLS_BASE_URL}/api/v2/video/details/{requests.utils.quote(str(video_vanity))}?show_id={show_id}"
+        res_vid = session.get(vid_details_url, headers=headers, timeout=10)
+        if res_vid.status_code != 200:
+            return None
+            
+        vid_data = res_vid.json().get("data", {})
+        resolutions = vid_data.get("resolutions", [])
+        playlist_url = next((r.get("url") for r in resolutions if r.get("type") == "auto"), None)
+        if not playlist_url and resolutions:
+            playlist_url = resolutions[0].get("url")
+
+        if not playlist_url:
+            return None
+
+        token_url = f"{FLS_BASE_URL}/api/v1/playlistV2/generateToken?id={requests.utils.quote(playlist_url, safe='')}"
+        res_token = session.get(token_url, headers=headers, timeout=10)
+        if res_token.status_code != 200:
+            return None
+            
+        stream_token = res_token.json().get("data")
+        if not stream_token:
+            return None
+            
+        final_m3u8_url = f"{FLS_BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
+        ua = FLS_HEADERS["user-agent"]
+        ref = FLS_HEADERS["referer"]
+        stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
+        
+        tmdb_id = fetch_tmdb_id(show_name, TMDB_API_KEY, "movie", year)
+        
+        return {
+            "id": str(show_id),
+            "title": show_name,
+            "tmdb_id": tmdb_id,
+            "poster": logo,
+            "genre": genre,
+            "description": description.replace("\n", " ").strip(),
+            "cast": cast,
+            "director": director,
+            "year": year,
+            "stream": stream_url_with_headers
+        }
+    except Exception:
+        return None
 
 def main():
     print("==================================================")
@@ -220,24 +255,23 @@ def main():
 
     print("\n--- Processing Dens.tv Movies ---")
     raw_movies_list = []
-
     with ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_genre = {executor.submit(get_movies_by_genre, g): g for g in GENRES_MOVIE}
-        
+        future_to_genre = {executor.submit(get_movies_by_genre, g): g for g in DENS_MOVIE}
         for future in as_completed(future_to_genre):
             genre = future_to_genre[future]
             try:
                 movies = future.result()
                 print(f"[*] Fetched Genre: {genre['name']} ({len(movies)} items)")
                 for m in movies:
-                    raw_movies_list.append((m, genre["name"]))
+                    m["_default_genre"] = genre["name"]
+                    raw_movies_list.append(m)
             except Exception as e:
                 print(f"    [!] Error processing genre {genre['name']}: {e}")
 
     unique_movies = {}
 
-    def process_single_movie(item_tuple):
-        m, default_genre = item_tuple
+    def process_single_movie(m):
+        default_genre = m.get("_default_genre", "Movie")
         m_id = m.get("movie_id")
         title = m.get("title", "")
         movie_type = m.get("movie_type", "").upper()
@@ -258,7 +292,7 @@ def main():
 
         if m_id and m_id not in unique_movies:
             raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "") or m.get("file", "")
-            formatted_stream = format_stream_url(raw_stream, m_id)
+            formatted_stream = format_stream_url(raw_stream, m_id, USER_ID_TARGET)
             
             poster = (m.get("url_handle", {}).get("img_port_large", "") or 
                       m.get("url_handle", {}).get("img_land_large", "") or 
@@ -267,8 +301,7 @@ def main():
                 poster = quote(poster, safe=":/%")
 
             if formatted_stream:
-                tmdb_id = fetch_tmdb_id(title, "movie", year)
-                
+                tmdb_id = fetch_tmdb_id(title, TMDB_API_KEY, "movie", year)
                 return {
                     "id": m_id,
                     "title": title,
@@ -283,7 +316,7 @@ def main():
                 }
         return None
 
-    print("\n[*] Processing metadata and TMDB mapping...")
+    print("\n[*] Processing Dens.tv metadata and TMDB mapping...")
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(process_single_movie, item) for item in raw_movies_list]
         for future in as_completed(futures):
@@ -294,7 +327,47 @@ def main():
             except Exception as e:
                 print(f"    [!] Error in metadata thread: {e}")
 
-    print(f"\n[✓] A total of {len(unique_movies)} Dens.tv movies successfully extracted!")
+    print("\n--- Processing FreeLiveSports Movies ---")
+    fls_session = create_fls_session()
+    try:
+        print("[*] Performing FLS authentication...")
+        fls_token = fls_authenticate(fls_session)
+        print("[*] Retrieving the VOD list from the FLS homepage...")
+        home_url = f"{FLS_BASE_URL}/api/v2/home"
+        headers = {"access-token": fls_token, "uid": "7938114"} if fls_token else {"uid": "7938114"}
+        r_home = fls_session.get(home_url, headers=headers, timeout=10)
+        
+        fls_home_data = r_home.json() if r_home.status_code == 200 else {}
+
+        fls_shows = []
+        def extract_fls_shows(obj):
+            if isinstance(obj, dict):
+                if "show_id" in obj and ("vanity_url" in obj or "show_name" in obj):
+                    fls_shows.append(obj)
+                for k, v in obj.items():
+                    extract_fls_shows(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    extract_fls_shows(item)
+
+        extract_fls_shows(fls_home_data)
+        fls_unique_shows = list({s["show_id"]: s for s in fls_shows}.values())
+        
+        fls_movie_count = 0
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(process_fls_movie, fls_session, fls_token, show) for show in fls_unique_shows]
+            for future in as_completed(futures):
+                res = future.result()
+                if res:
+                    item_key = f"fls_m_{res['id']}"
+                    if item_key not in unique_movies:
+                        unique_movies[item_key] = res
+                        fls_movie_count += 1
+        print(f"[✓] FreeLiveSports movies added: {fls_movie_count}")
+    except Exception as e:
+        print(f"[!] Failed to process FreeLiveSports movies: {e}")
+
+    print(f"\n[✓] Total {len(unique_movies)} movies collected!")
     print("==================================================")
 
     count = 0
