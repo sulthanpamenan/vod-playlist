@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import requests
 
 TMDB_CACHE = {}
