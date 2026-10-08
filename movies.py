@@ -1,14 +1,21 @@
 import os
-import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 import requests
 import streamlink
 import urllib3
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-from utils import fetch_tmdb_id, format_stream_url, clean_title
+from utils import (
+    fetch_tmdb_id, 
+    format_stream_url, 
+    save_tmdb_cache, 
+    create_fls_session, 
+    fls_authenticate, 
+    fls_get_home_data, 
+    FLS_BASE_URL, 
+    FLS_HEADERS
+)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -59,43 +66,6 @@ SESSION_DENSTV.headers.update({
     "Referer": "https://www.dens.tv/",
     "Accept": "*/*"
 })
-
-FLS_BASE_URL = "https://api.gizmott.com"
-FLS_HEADERS = {
-    "accept": "application/json, text/plain, */*",
-    "accept-language": "id,en-US;q=0.9,en;q=0.8",
-    "access-control-allow-origin": "true",
-    "channelid": "516",
-    "country_code": "ID",
-    "crossorigin": "true",
-    "dev_id": "a390d35935634d6173bf7148665a1a0e",
-    "device_type": "web",
-    "ip": "223.255.224.124",
-    "origin": "https://freelivesports.tv",
-    "pubid": "50183",
-    "referer": "https://freelivesports.tv/",
-    "uid": "7938114",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
-}
-
-def create_fls_session():
-    session = requests.Session()
-    session.verify = False
-    retries = Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
-    adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=20)
-    session.mount("https://", adapter)
-    session.headers.update(FLS_HEADERS)
-    return session
-
-def fls_authenticate(session):
-    url = f"{FLS_BASE_URL}/api/v1/account/authenticate"
-    try:
-        res = session.get(url, timeout=10)
-        if res.status_code == 200:
-            return res.json().get("token")
-    except Exception:
-        pass
-    return None
 
 SL_SESSION = streamlink.Streamlink()
 SL_SESSION.set_option("http-headers", {
@@ -333,12 +303,8 @@ def main():
         print("[*] Performing FLS authentication...")
         fls_token = fls_authenticate(fls_session)
         print("[*] Retrieving the VOD list from the FLS homepage...")
-        home_url = f"{FLS_BASE_URL}/api/v2/home"
-        headers = {"access-token": fls_token, "uid": "7938114"} if fls_token else {"uid": "7938114"}
-        r_home = fls_session.get(home_url, headers=headers, timeout=10)
+        fls_home_data = fls_get_home_data(fls_session, fls_token)
         
-        fls_home_data = r_home.json() if r_home.status_code == 200 else {}
-
         fls_shows = []
         def extract_fls_shows(obj):
             if isinstance(obj, dict):
@@ -350,8 +316,12 @@ def main():
                 for item in obj:
                     extract_fls_shows(item)
 
-        extract_fls_shows(fls_home_data)
-        fls_unique_shows = list({s["show_id"]: s for s in fls_shows}.values())
+        if isinstance(fls_home_data, dict):
+            extract_fls_shows(fls_home_data.get("data", fls_home_data))
+        elif isinstance(fls_home_data, list):
+            extract_fls_shows(fls_home_data)
+
+        fls_unique_shows = list({s["show_id"]: s for s in fls_shows if isinstance(s, dict) and "show_id" in s}.values())
         
         fls_movie_count = 0
         with ThreadPoolExecutor(max_workers=10) as executor:
@@ -366,6 +336,8 @@ def main():
         print(f"[✓] FreeLiveSports movies added: {fls_movie_count}")
     except Exception as e:
         print(f"[!] Failed to process FreeLiveSports movies: {e}")
+
+    save_tmdb_cache()
 
     print(f"\n[✓] Total {len(unique_movies)} movies collected!")
     print("==================================================")
