@@ -77,30 +77,22 @@ def process_fls_show(session, access_token, show):
         details = res_details.json().get("data", {})
         if not isinstance(details, dict):
             details = {}
-            
-        if details.get("single_video") == 1 or details.get("season") is None:
-            videos_data = details.get("videos", [])
-            if not videos_data or len(videos_data) <= 1:
-                return None
-        
-        videos_data = details.get("videos", [])
-        episodes_data = videos_data if isinstance(videos_data, list) else []
-        if not episodes_data and isinstance(details.get("up_next"), list):
-            episodes_data = details.get("up_next")
-        
-        if len(episodes_data) == 0 and details.get("season") is None:
-            return None
-        
+
         videos_data = details.get("videos", [])
         episodes_data = videos_data if isinstance(videos_data, list) else []
         if not episodes_data and isinstance(details.get("up_next"), list):
             episodes_data = details.get("up_next")
 
-        is_series_pattern = bool(re.search(r's\d+|season|ep|episode|part', show_name, re.IGNORECASE))
-        if not is_series_pattern and details.get("season") is None and len(episodes_data) == 0:
+        target_episodes = list(episodes_data)
+        current_vid_id = details.get("video_id")
+        
+        if current_vid_id and not any(str(ep.get("video_id")) == str(current_vid_id) for ep in target_episodes):
+            target_episodes.insert(0, details)
+
+        if not target_episodes and details.get("season") is None:
             return None
 
-        description = details.get("synopsis") or details.get("description", "")
+        description = details.get("synopsis") or details.get("video_description") or details.get("description", "")
         director = details.get("director", "") or ""
         cast = details.get("show_cast", "") or ""
         
@@ -109,19 +101,17 @@ def process_fls_show(session, access_token, show):
         genre = genres_list[0] if genres_list else clean_title(show_name)
 
         entries = []
-        target_episodes = episodes_data if episodes_data else [details]
-
         for idx, ep in enumerate(target_episodes, start=1):
             if not isinstance(ep, dict):
                 continue
                 
             season_num = str(ep.get("season") or details.get("season") or 1)
-            ep_vanity = ep.get("vanity_url") or vanity_url
+            ep_vanity = ep.get("vanity_url") or details.get("vanity_url") or vanity_url
             ep_id = ep.get("video_id") or ep.get("show_id") or show_id
             if not ep_id:
                 continue
                 
-            ep_title = ep.get("video_title") or ep.get("show_name") or f"{show_name} S{season_num}E{idx:02d}"
+            ep_title = ep.get("video_title") or ep.get("show_name") or ep.get("title") or f"{show_name} S{season_num}E{idx:02d}"
             ep_desc = ep.get("video_description") or ep.get("synopsis") or description
             
             vid_details_url = f"{FLS_BASE_URL}/api/v2/video/details/{requests.utils.quote(str(ep_vanity))}?show_id={show_id}"
