@@ -97,12 +97,16 @@ def process_fls_show(session, access_token, show):
             for item in videos_data:
                 if isinstance(item, dict):
                     s_num = item.get("season_number") or item.get("season") or 1
-                    ep_list = item.get("episodes") or item.get("video_list") or [item]
-                    if isinstance(ep_list, list):
-                        for ep in ep_list:
+                    sub_eps = item.get("episodes") or item.get("video_list") or item.get("videos")
+                    
+                    if isinstance(sub_eps, list) and sub_eps:
+                        for ep in sub_eps:
                             if isinstance(ep, dict):
                                 ep["_parsed_season"] = s_num
                                 target_episodes.append(ep)
+                    elif "video_id" in item or "vanity_url" in item:
+                        item["_parsed_season"] = s_num
+                        target_episodes.append(item)
                     else:
                         target_episodes.append(item)
                 else:
@@ -111,8 +115,11 @@ def process_fls_show(session, access_token, show):
         if not target_episodes and isinstance(details.get("up_next"), list):
             target_episodes = details.get("up_next")
 
-        if not target_episodes:
+        if not target_episodes and details.get("video_id"):
             target_episodes = [details]
+
+        if not target_episodes:
+            return None
 
         entries = []
         for idx, ep in enumerate(target_episodes, start=1):
