@@ -77,7 +77,20 @@ def process_fls_show(session, access_token, show):
         details = res_details.json().get("data", {})
         if not isinstance(details, dict):
             details = {}
-
+            
+        if details.get("single_video") == 1 or details.get("season") is None:
+            videos_data = details.get("videos", [])
+            if not videos_data or len(videos_data) <= 1:
+                return None
+        
+        videos_data = details.get("videos", [])
+        episodes_data = videos_data if isinstance(videos_data, list) else []
+        if not episodes_data and isinstance(details.get("up_next"), list):
+            episodes_data = details.get("up_next")
+        
+        if len(episodes_data) == 0 and details.get("season") is None:
+            return None
+        
         videos_data = details.get("videos", [])
         episodes_data = videos_data if isinstance(videos_data, list) else []
         if not episodes_data and isinstance(details.get("up_next"), list):
@@ -253,9 +266,21 @@ def main():
         for parent in series_list:
             p_id = parent.get("movie_id")
             p_title = parent.get("title", "")
+            movie_type = str(parent.get("movie_type", "")).upper()
+            
+            if movie_type == "MOVIE":
+                continue
+            
             if not p_id:
                 continue
 
+            episodes = series_cache.get(p_id, [])
+            if not episodes and parent.get("season") is None:
+                continue
+            
+            if not episodes:
+                episodes = [parent]
+                
             clean_p_title = clean_title(p_title)
             year = str(parent.get("year", ""))
             
