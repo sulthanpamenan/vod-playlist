@@ -178,3 +178,30 @@ def is_fls_series(details):
     if details.get("season") is not None or details.get("videos") or details.get("up_next"):
         return True
     return False
+
+def extract_fls_shows_from_data(home_data):
+    fls_shows = []
+    def recursive_extract(obj):
+        if isinstance(obj, dict):
+            if "show_id" in obj and ("vanity_url" in obj or "show_name" in obj):
+                fls_shows.append(obj)
+            for k, v in obj.items():
+                recursive_extract(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                recursive_extract(item)
+
+    if isinstance(home_data, dict):
+        recursive_extract(home_data.get("data", home_data))
+    elif isinstance(home_data, list):
+        recursive_extract(home_data)
+
+    seen = set()
+    unique_shows = []
+    for s in fls_shows:
+        if isinstance(s, dict) and "show_id" in s:
+            s_id = s["show_id"]
+            if s_id not in seen:
+                seen.add(s_id)
+                unique_shows.append(s)
+    return unique_shows
