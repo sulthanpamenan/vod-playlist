@@ -351,23 +351,7 @@ def main():
         fls_token = fls_authenticate(fls_session)
         fls_home_data = fls_get_home_data(fls_session, fls_token)
         
-        fls_shows = []
-        def extract_fls_shows(obj):
-            if isinstance(obj, dict):
-                if "show_id" in obj and ("vanity_url" in obj or "show_name" in obj):
-                    fls_shows.append(obj)
-                for k, v in obj.items():
-                    extract_fls_shows(v)
-            elif isinstance(obj, list):
-                for item in obj:
-                    extract_fls_shows(item)
-
-        if isinstance(fls_home_data, dict):
-            extract_fls_shows(fls_home_data.get("data", fls_home_data))
-        elif isinstance(fls_home_data, list):
-            extract_fls_shows(fls_home_data)
-
-        fls_unique_shows = []
+        fls_unique_shows = extract_fls_shows_from_data(fls_home_data)
         seen_show_ids = set()
         for s in fls_shows:
             if isinstance(s, dict) and "show_id" in s:
