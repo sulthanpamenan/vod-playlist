@@ -399,7 +399,9 @@ def main():
                 season_num = str(data.get('season', '1')).zfill(2)
                 formatted_line_title = f"S{season_num}E{ep_num} - {data['title']}"
                 
-                f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="{data.get("tmdb_id", "")}"{desc_attr}{director_attr}{cast_attr} serie-title="{data["serie_title"]}" tvg-season="{season_num}" tvg-episode="{ep_num}" tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{formatted_line_title}\n')
+                folder_group = data["serie_title"]
+                
+                f.write(f'#EXTINF:-1 vod="1" type="series" content-type="series" tvg-tmdb="{data.get("tmdb_id", "")}"{desc_attr}{director_attr}{cast_attr} serie-title="{data["serie_title"]}" tvg-season="{season_num}" tvg-episode="{ep_num}" tvg-logo="{data["poster"]}" group-title="{folder_group}",{formatted_line_title}\n')
             else:
                 item_type = data.get("type", "movie")
                 f.write(f'#EXTINF:-1 vod="1" type="{item_type}" content-type="{item_type}" tvg-tmdb="{data.get("tmdb_id", "")}"{desc_attr}{director_attr}{cast_attr} tvg-logo="{data["poster"]}" group-title="{data["genre"]}",{data["title"]}\n')
