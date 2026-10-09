@@ -239,27 +239,20 @@ def main():
                 print(f"    [!] Error processing genre {genre['name']}: {e}")
 
     unique_movies = {}
-
+    
     def process_single_movie(m):
         default_genre = m.get("_default_genre", "Movie")
         m_id = m.get("movie_id")
         title = m.get("title", "")
-        movie_type = m.get("movie_type", "").upper()
+        movie_type = str(m.get("movie_type", "")).upper()
         year = str(m.get("year", ""))
-        description = m.get("description", "").replace("\n", " ").strip()
-        cast = m.get("cast", "").strip()
-        director = m.get("director", "").strip()
         
-        keywords = m.get("keywords", [])
-        primary_genre = default_genre
-        for kw in keywords:
-            if kw.get("keyword_type", "").upper() == "GEN":
-                primary_genre = kw.get("keyword_name", "").strip()
-                break
-
         if movie_type == "SERIES" or any(kw in title.lower() for kw in ["episode", "episodes", "eps"]):
             return None
-
+            
+        if m.get("season") is not None:
+            return None
+        
         if m_id and m_id not in unique_movies:
             raw_stream = m.get("extra", {}).get("stream", {}).get("play_url", "") or m.get("file", "")
             formatted_stream = format_stream_url(raw_stream, m_id, USER_ID_TARGET)
@@ -269,7 +262,7 @@ def main():
                       m.get("image", ""))
             if poster:
                 poster = quote(poster, safe=":/%")
-
+            
             if formatted_stream:
                 tmdb_id = fetch_tmdb_id(title, TMDB_API_KEY, "movie", year)
                 return {
@@ -277,14 +270,14 @@ def main():
                     "title": title,
                     "tmdb_id": tmdb_id,
                     "poster": poster,
-                    "genre": primary_genre,
-                    "description": description,
-                    "cast": cast,
-                    "director": director,
+                    "genre": default_genre,
+                    "description": m.get("description", "").replace("\n", " ").strip(),
+                    "cast": m.get("cast", "").strip(),
+                    "director": m.get("director", "").strip(),
                     "year": year,
                     "stream": formatted_stream + HEADERS_SUFFIX
                 }
-        return None
+            return None
 
     print("\n[*] Processing Dens.tv metadata and TMDB mapping...")
     with ThreadPoolExecutor(max_workers=10) as executor:
