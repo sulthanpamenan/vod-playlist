@@ -14,7 +14,8 @@ from utils import (
     fls_authenticate, 
     fls_get_home_data, 
     FLS_BASE_URL, 
-    FLS_HEADERS
+    FLS_HEADERS,
+    is_fls_movie
 )
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -128,7 +129,8 @@ def process_fls_movie(session, access_token, show):
             return None
             
         details = res_details.json().get("data", {})
-        if details.get("single_video") != 1:
+        
+        if not is_fls_movie(details):
             return None
 
         description = details.get("synopsis") or details.get("description", "")
@@ -173,7 +175,7 @@ def process_fls_movie(session, access_token, show):
         final_m3u8_url = f"{FLS_BASE_URL}/api/v1/playlistV2/playlist.m3u8?id={playlist_url}&token={stream_token}&type=video&pubid=50183"
         ua = FLS_HEADERS["user-agent"]
         ref = FLS_HEADERS["referer"]
-        stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
+        stream_url_with_headers = f"{final_m3u8_`url`}|User-Agent={ua}&Referer={ref}"
         
         tmdb_id = fetch_tmdb_id(show_name, TMDB_API_KEY, "movie", year)
         
