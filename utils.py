@@ -161,6 +161,8 @@ def is_valid_series(item):
 def is_fls_movie(details):
     if details.get("single_video") == 1:
         return True
+    if details.get("single_video") == 0:
+        return False
     if details.get("season") is not None:
         return False
     videos = details.get("videos", [])
@@ -171,6 +173,8 @@ def is_fls_movie(details):
 def is_fls_series(details):
     if details.get("single_video") == 1:
         return False
+    if details.get("single_video") == 0:
+        return True
     if details.get("season") is not None or details.get("videos") or details.get("up_next"):
         return True
     return False
