@@ -78,22 +78,7 @@ def process_fls_show(session, access_token, show):
         if not isinstance(details, dict):
             details = {}
 
-        # Validasi ketat: Jika ini adalah movie, abaikan di skrip series untuk cegah duplikasi/salah kamar
         if not is_fls_series(details):
-            return None
-
-        videos_data = details.get("videos", [])
-        episodes_data = videos_data if isinstance(videos_data, list) else []
-        if not episodes_data and isinstance(details.get("up_next"), list):
-            episodes_data = details.get("up_next")
-
-        target_episodes = list(episodes_data)
-        current_vid_id = details.get("video_id")
-        
-        if current_vid_id and not any(str(ep.get("video_id")) == str(current_vid_id) for ep in target_episodes):
-            target_episodes.insert(0, details)
-
-        if not target_episodes:
             return None
 
         description = details.get("synopsis") or details.get("video_description") or details.get("description", "")
@@ -103,20 +88,44 @@ def process_fls_show(session, access_token, show):
         categories = details.get("categories", [])
         genres_list = [cat.get("category_name") for cat in categories if isinstance(cat, dict) and cat.get("category_name")]
         genre = genres_list[0] if genres_list else clean_title(show_name)
-
         clean_show_name = clean_title(show_name)
+
+        videos_data = details.get("videos", [])
+        target_episodes = []
+
+        if isinstance(videos_data, list):
+            for group in videos_data:
+                if isinstance(group, dict):
+                    s_num = group.get("season_number") or group.get("season") or 1
+                    ep_list = group.get("episodes") or group.get("video_list") or [group]
+                    if isinstance(ep_list, list):
+                        for ep in ep_list:
+                            if isinstance(ep, dict):
+                                ep["_parsed_season"] = s_num
+                                target_episodes.append(ep)
+                    else:
+                        target_episodes.append(group)
+                else:
+                    target_episodes.append(details)
+        
+        if not target_episodes and isinstance(details.get("up_next"), list):
+            target_episodes = details.get("up_next")
+
+        if not target_episodes:
+            target_episodes = [details]
+
         entries = []
         for idx, ep in enumerate(target_episodes, start=1):
             if not isinstance(ep, dict):
                 continue
                 
-            season_num = str(ep.get("season") or details.get("season") or 1)
+            season_num = str(ep.get("_parsed_season") or ep.get("season") or details.get("season") or 1)
             ep_vanity = ep.get("vanity_url") or details.get("vanity_url") or vanity_url
             ep_id = ep.get("video_id") or ep.get("show_id") or show_id
             if not ep_id:
                 continue
                 
-            ep_title = ep.get("video_title") or ep.get("show_name") or ep.get("title") or f"{show_name} S{season_num}E{idx:02d}"
+            ep_title = ep.get("video_title") or ep.get("title") or ep.get("show_name") or f"{show_name} S{season_num}E{idx:02d}"
             clean_ep_title = clean_episode_title(ep_title, clean_show_name)
             ep_desc = ep.get("video_description") or ep.get("synopsis") or description
             
@@ -157,7 +166,7 @@ def process_fls_show(session, access_token, show):
             entry = {
                 "id": str(ep_id),
                 "title": clean_ep_title,
-                "serie_title": clean_show_name, # Memastikan nama folder induk bersih
+                "serie_title": clean_show_name,
                 "tmdb_id": "",
                 "poster": logo,
                 "genre": genre,
@@ -165,8 +174,8 @@ def process_fls_show(session, access_token, show):
                 "cast": cast,
                 "director": director,
                 "type": "series",
-                "season": season_num.zfill(2),
-                "episode": ep_order.zfill(2),
+                "season": str(season_num).zfill(2),
+                "episode": str(ep_order).zfill(2),
                 "stream": stream_url_with_headers
             }
             entries.append(entry)
@@ -263,7 +272,6 @@ def main():
             p_title = parent.get("title", "")
             movie_type = str(parent.get("movie_type", "")).upper()
             
-            # Filter ketat: Lewati jika tipe data murni MOVIE
             if movie_type == "MOVIE":
                 continue
             if not p_id:
@@ -315,7 +323,7 @@ def main():
                         unique_episodes[ep_id] = {
                             "id": str(ep_id),
                             "title": clean_ep_title,
-                            "serie_title": clean_p_title, # Folder induk series yang bersih
+                            "serie_title": clean_p_title,
                             "tmdb_id": tmdb_id,
                             "poster": poster,
                             "genre": primary_genre,
