@@ -352,13 +352,6 @@ def main():
         fls_home_data = fls_get_home_data(fls_session, fls_token)
         
         fls_unique_shows = extract_fls_shows_from_data(fls_home_data)
-        seen_show_ids = set()
-        for s in fls_shows:
-            if isinstance(s, dict) and "show_id" in s:
-                s_id = s["show_id"]
-                if s_id not in seen_show_ids:
-                    seen_show_ids.add(s_id)
-                    fls_unique_shows.append(s)
 
         fls_count = 0
         with ThreadPoolExecutor(max_workers=20) as executor:
