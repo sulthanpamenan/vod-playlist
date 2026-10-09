@@ -15,12 +15,12 @@ from utils import (
     create_fls_session, 
     fls_authenticate, 
     fls_get_home_data, 
-    FLS_BASE_URL
+    FLS_BASE_URL,
+    is_fls_series
 )
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ================= CONFIGURASI DENS.TV =================
 USER_ID_TARGET = "wnctpm5uf2j"
 TMDB_API_KEY = "f5b601ec011f9760c7fb6752670714cf"
 HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36&Origin=https://www.dens.tv&Referer=https://www.dens.tv/"
@@ -78,6 +78,10 @@ def process_fls_show(session, access_token, show):
         if not isinstance(details, dict):
             details = {}
 
+        # Validasi ketat: Jika ini adalah movie, abaikan di skrip series untuk cegah duplikasi/salah kamar
+        if not is_fls_series(details):
+            return None
+
         videos_data = details.get("videos", [])
         episodes_data = videos_data if isinstance(videos_data, list) else []
         if not episodes_data and isinstance(details.get("up_next"), list):
@@ -89,7 +93,7 @@ def process_fls_show(session, access_token, show):
         if current_vid_id and not any(str(ep.get("video_id")) == str(current_vid_id) for ep in target_episodes):
             target_episodes.insert(0, details)
 
-        if not target_episodes and details.get("season") is None:
+        if not target_episodes:
             return None
 
         description = details.get("synopsis") or details.get("video_description") or details.get("description", "")
@@ -100,6 +104,7 @@ def process_fls_show(session, access_token, show):
         genres_list = [cat.get("category_name") for cat in categories if isinstance(cat, dict) and cat.get("category_name")]
         genre = genres_list[0] if genres_list else clean_title(show_name)
 
+        clean_show_name = clean_title(show_name)
         entries = []
         for idx, ep in enumerate(target_episodes, start=1):
             if not isinstance(ep, dict):
@@ -112,6 +117,7 @@ def process_fls_show(session, access_token, show):
                 continue
                 
             ep_title = ep.get("video_title") or ep.get("show_name") or ep.get("title") or f"{show_name} S{season_num}E{idx:02d}"
+            clean_ep_title = clean_episode_title(ep_title, clean_show_name)
             ep_desc = ep.get("video_description") or ep.get("synopsis") or description
             
             vid_details_url = f"{FLS_BASE_URL}/api/v2/video/details/{requests.utils.quote(str(ep_vanity))}?show_id={show_id}"
@@ -146,13 +152,12 @@ def process_fls_show(session, access_token, show):
             ref = "https://freelivesports.tv/"
             stream_url_with_headers = f"{final_m3u8_url}|User-Agent={ua}&Referer={ref}"
             
-            clean_show_name = clean_title(show_name)
             ep_order = str(ep.get("video_order") or idx)
             
             entry = {
                 "id": str(ep_id),
-                "title": ep_title,
-                "serie_title": clean_show_name,
+                "title": clean_ep_title,
+                "serie_title": clean_show_name, # Memastikan nama folder induk bersih
                 "tmdb_id": "",
                 "poster": logo,
                 "genre": genre,
@@ -160,8 +165,8 @@ def process_fls_show(session, access_token, show):
                 "cast": cast,
                 "director": director,
                 "type": "series",
-                "season": season_num,
-                "episode": ep_order,
+                "season": season_num.zfill(2),
+                "episode": ep_order.zfill(2),
                 "stream": stream_url_with_headers
             }
             entries.append(entry)
@@ -211,7 +216,7 @@ def get_episodes_by_series(series_id, series_slug):
 
 def main():
     print("==================================================")
-    print("[UNIFIED VOD SCRAPER] Dens.tv & FreeLiveSports...")
+    print("[UNIFIED VOD SCRAPER] Dens.tv & FreeLiveSports (Series)...")
     print("==================================================")
 
     header_content = [
@@ -232,7 +237,7 @@ def main():
     unique_episodes = {}
     series_cache = {}
 
-    print("\n--- [1/2] Retrieving Data from Dens.tv ---")
+    print("\n--- [1/2] Retrieving Series Data from Dens.tv ---")
     for cat in CATEGORIES:
         print(f"[*] Dens.tv Category Fetching: {cat['name']}...")
         series_list = get_series_by_category(cat["id"], cat["slug"])
@@ -258,14 +263,14 @@ def main():
             p_title = parent.get("title", "")
             movie_type = str(parent.get("movie_type", "")).upper()
             
+            # Filter ketat: Lewati jika tipe data murni MOVIE
             if movie_type == "MOVIE":
                 continue
-            
             if not p_id:
                 continue
 
             episodes = series_cache.get(p_id, [])
-            if not episodes and parent.get("season") is None:
+            if not episodes and parent.get("season") is None and movie_type != "SERIES":
                 continue
             
             if not episodes:
@@ -285,10 +290,6 @@ def main():
             skip_tmdb_keywords = ["office hour", "sinema hits", "ngopi cantik", "kosan mbg", "petaka", "jelajah halal"]
             if len(clean_p_title) > 4 and not any(kw in clean_p_title.lower() for kw in skip_tmdb_keywords):
                 tmdb_id = fetch_tmdb_id(p_title, TMDB_API_KEY, "tv", year)
-
-            episodes = series_cache.get(p_id, [])
-            if not episodes:
-                episodes = [parent]
 
             for idx, ep in enumerate(episodes, start=1):
                 ep_id = ep.get("movie_id")
@@ -314,7 +315,7 @@ def main():
                         unique_episodes[ep_id] = {
                             "id": str(ep_id),
                             "title": clean_ep_title,
-                            "serie_title": clean_p_title,
+                            "serie_title": clean_p_title, # Folder induk series yang bersih
                             "tmdb_id": tmdb_id,
                             "poster": poster,
                             "genre": primary_genre,
@@ -322,19 +323,17 @@ def main():
                             "cast": cast,
                             "director": director,
                             "type": "series",
-                            "season": season_num,
-                            "episode": episode_num,
+                            "season": season_num.zfill(2),
+                            "episode": episode_num.zfill(2),
                             "stream": formatted_stream + HEADERS_SUFFIX
                         }
 
-    print(f"[✓] Dens.tv completed: {len(unique_episodes)} items collected.")
+    print(f"[✓] Dens.tv series completed.")
 
-    print("\n--- [2/2] Retrieving Data from FreeLiveSports ---")
+    print("\n--- [2/2] Retrieving Series Data from FreeLiveSports ---")
     fls_session = create_fls_session()
     try:
-        print("[*] Performing FLS authentication...")
         fls_token = fls_authenticate(fls_session)
-        print("[*] Retrieving the VOD list from the FLS homepage...")
         fls_home_data = fls_get_home_data(fls_session, fls_token)
         
         fls_shows = []
@@ -362,8 +361,6 @@ def main():
                     seen_show_ids.add(s_id)
                     fls_unique_shows.append(s)
 
-        print(f"    Found {len(fls_unique_shows)} unique FLS VODs. Processing in parallel...")
-
         fls_count = 0
         with ThreadPoolExecutor(max_workers=20) as executor:
             futures = [executor.submit(process_fls_show, fls_session, fls_token, show) for show in fls_unique_shows]
@@ -380,9 +377,9 @@ def main():
                 except Exception as ex:
                     print(f"    [!] Error parsing FLS future result: {ex}")
 
-        print(f"[✓] FreeLiveSports complete: {fls_count} items successfully added.")
+        print(f"[✓] FreeLiveSports series complete: {fls_count} items added.")
     except Exception as e:
-        print(f"[!] Failed to process FreeLiveSports: {e}")
+        print(f"[!] Failed to process FreeLiveSports series: {e}")
 
     save_tmdb_cache()
 
@@ -411,7 +408,7 @@ def main():
             count += 1
 
     print("==================================================")
-    print(f"[COMPLETED] A total of {count} items were successfully saved to series.m3u")
+    print(f"[COMPLETED] Total {count} series items successfully saved.")
     print("==================================================")
 
 if __name__ == "__main__":
