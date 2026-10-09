@@ -137,3 +137,23 @@ def fls_get_home_data(session, token):
     except Exception:
         pass
     return {}
+
+def is_valid_movie(item):
+    movie_type = str(item.get("movie_type", "")).upper()
+    title = item.get("title", "").lower()
+    
+    if movie_type == "SERIES" or any(kw in title for kw in ["episode", "episodes", "eps", "s0", "season"]):
+        return False
+        
+    if "season" in item and item.get("season") is not None:
+        return False
+        
+    return True
+
+def is_valid_series(item):
+    movie_type = str(item.get("movie_type", "")).upper()
+    
+    if movie_type == "MOVIE":
+        return False
+        
+    return True
