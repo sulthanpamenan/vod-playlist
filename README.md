@@ -5,7 +5,7 @@
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Active-success?logo=github)](https://sulthanpamenan.github.io/vod-playlist/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An automated M3U playlist generator designed for Video On Demand (VOD) content (Movies & TV Series). It automatically extracts media catalogs and updates stream tokens to ensure optimized playback across modern IPTV applications.
+An automated M3U playlist generator designed for Video On Demand (VOD) content (Movies & TV Series). It extracts media catalogs, normalizes stream tokens, and enriches entries with advanced metadata to ensure optimal playback across modern IPTV applications.
 
 ---
 
@@ -22,10 +22,11 @@ Import these links directly into your preferred IPTV player (TiviMate, OTT Navig
 
 ## ✨ Key Features
 
-- **Automated Stream Maintenance:** Regularly refreshes stream tokens via scheduled GitHub Actions to prevent broken links.
-- **Separated Catalogs:** Dedicated playlists for **Movies** and **TV Series** for clean category organization in IPTV apps.
-- **Rich Metadata Support:** Pre-configured with poster artwork (`tvg-logo`), content IDs, titles, VOD flags (`vod="1"`), and group tags.
-- **Universal Compatibility:** Standardized M3U/M3U8 format supported by all major IPTV players and media applications.
+- **Automated Stream Maintenance:** Regularly refreshes stream tokens via scheduled GitHub Actions to prevent broken or expired links.
+- **Separated Catalogs:** Dedicated, cleanly organized playlists for **Movies** and **TV Series** for intuitive category management in IPTV apps.
+- **Advanced TMDB Metadata Integration:** Automatically maps content to **TMDB IDs** (`tvg-tmdb`) for accurate posters, descriptions, cast, and director details.
+- **Rich Media Attributes:** Pre-configured with high-resolution poster artwork (`tvg-logo`), custom descriptions (`tvg-description`), directors, cast attributes, and structured grouping tags (`group-title`).
+- **Universal Compatibility:** Standardized M3U/M3U8 format fully supported by all major IPTV players and media centers.
 
 ---
 
@@ -36,7 +37,7 @@ Import these links directly into your preferred IPTV player (TiviMate, OTT Navig
    - For Movies: `https://sulthanpamenan.github.io/vod-playlist/movies.m3u`
    - For Series: `https://sulthanpamenan.github.io/vod-playlist/series.m3u`
 3. *(For OTT Navigator)* If content appears under Live TV, go to **Playlist Settings** > **Content/Playlist Type** and change it to **VOD (Movies/Series)**.
-4. Refresh the provider to load the full catalog.
+4. Refresh the provider to load the complete metadata and catalog.
 
 ---
 
