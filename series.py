@@ -78,7 +78,7 @@ def process_fls_show(session, access_token, show):
         if not isinstance(details, dict):
             details = {}
 
-        if not is_fls_series(details):
+        if details.get("single_video") == 1:
             return None
 
         description = details.get("synopsis") or details.get("video_description") or details.get("description", "")
@@ -94,17 +94,17 @@ def process_fls_show(session, access_token, show):
         target_episodes = []
 
         if isinstance(videos_data, list):
-            for group in videos_data:
-                if isinstance(group, dict):
-                    s_num = group.get("season_number") or group.get("season") or 1
-                    ep_list = group.get("episodes") or group.get("video_list") or [group]
+            for item in videos_data:
+                if isinstance(item, dict):
+                    s_num = item.get("season_number") or item.get("season") or 1
+                    ep_list = item.get("episodes") or item.get("video_list") or [item]
                     if isinstance(ep_list, list):
                         for ep in ep_list:
                             if isinstance(ep, dict):
                                 ep["_parsed_season"] = s_num
                                 target_episodes.append(ep)
                     else:
-                        target_episodes.append(group)
+                        target_episodes.append(item)
                 else:
                     target_episodes.append(details)
         
