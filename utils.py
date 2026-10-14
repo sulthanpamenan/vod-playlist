@@ -48,50 +48,59 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
         return ""
     
     cache_key = f"{clean_t}_{year}" if year else clean_t
-    if cache_key in TMDB_CACHE:
+    
+    if cache_key in TMDB_CACHE and TMDB_CACHE[cache_key] != "":
         return TMDB_CACHE[cache_key]
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
+    
+    queries_to_try = []
+    if year and str(year).isdigit():
+        queries_to_try.append(f"{clean_t} y:{year}")
+        queries_to_try.append(clean_t)
+    else:
+        queries_to_try.append(clean_t)
+
     try:
-        params = {"api_key": tmdb_api_key, "query": clean_t}
-        if year and str(year).isdigit():
-            params["year"] = year
-            
-        res = requests.get(url, params=params, timeout=5)
-        if res.status_code == 200:
-            results = res.json().get("results", [])
-            
-            if results:
-                target_year = int(year) if (year and str(year).isdigit()) else None
-                best_match_id = None
-                smallest_year_diff = 999
+        for q in queries_to_try:
+            params = {"api_key": tmdb_api_key, "query": q}
+            if "y:" not in q and year and str(year).isdigit():
+                params["year"] = year
                 
-                for item in results:
-                    date_str = item.get("release_date") or item.get("first_air_date") or ""
-                    item_year_str = date_str[:4]
+            res = requests.get(url, params=params, timeout=5)
+            if res.status_code == 200:
+                results = res.json().get("results", [])
+                if results:
+                    target_year = int(year) if (year and str(year).isdigit()) else None
+                    best_match_id = None
+                    smallest_year_diff = 999
                     
-                    if target_year and item_year_str.isdigit():
-                        item_year = int(item_year_str)
-                        diff = abs(item_year - target_year)
+                    for item in results:
+                        date_str = item.get("release_date") or item.get("first_air_date") or ""
+                        item_year_str = date_str[:4]
                         
-                        if diff == 0:
+                        if target_year and item_year_str.isdigit():
+                            item_year = int(item_year_str)
+                            diff = abs(item_year - target_year)
+                            
+                            if diff == 0:
+                                best_match_id = str(item.get("id", ""))
+                                break
+                            elif diff <= 2 and diff < smallest_year_diff:
+                                smallest_year_diff = diff
+                                best_match_id = str(item.get("id", ""))
+                        elif not target_year:
                             best_match_id = str(item.get("id", ""))
                             break
-                        elif diff <= 1 and diff < smallest_year_diff:
-                            smallest_year_diff = diff
-                            best_match_id = str(item.get("id", ""))
-                    elif not target_year:
-                        best_match_id = str(item.get("id", ""))
-                        break
-                
-                if best_match_id:
-                    TMDB_CACHE[cache_key] = best_match_id
-                    return best_match_id
-                
-                fallback_id = str(results[0].get("id", ""))
-                TMDB_CACHE[cache_key] = fallback_id
-                return fallback_id
-                
+                    
+                    if best_match_id:
+                        TMDB_CACHE[cache_key] = best_match_id
+                        return best_match_id
+                    
+                    fallback_id = str(results[0].get("id", ""))
+                    TMDB_CACHE[cache_key] = fallback_id
+                    return fallback_id
+                    
     except Exception:
         pass
         
