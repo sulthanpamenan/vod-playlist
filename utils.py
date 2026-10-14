@@ -54,6 +54,9 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
     cache_key = f"{clean_t}_{year}" if year else clean_t
     if cache_key in TMDB_CACHE and TMDB_CACHE[cache_key] != "":
         return TMDB_CACHE[cache_key]
+        
+    if clean_t in TMDB_CACHE and TMDB_CACHE[clean_t] != "":
+        return TMDB_CACHE[clean_t]
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
     queries_to_try = [clean_t]
@@ -67,40 +70,43 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                 if results:
                     target_year = int(year) if (year and str(year).isdigit()) else None
                     best_match_id = None
-                    smallest_year_diff = 999
+                    highest_similarity = 0.0
                     
                     for item in results:
                         item_title = item.get("title") or item.get("name") or ""
                         date_str = item.get("release_date") or item.get("first_air_date") or ""
                         item_year_str = date_str[:4]
                         
-                        if not is_title_similar(clean_t, item_title, threshold=0.4):
-                            continue
+                        similarity = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
                         
-                        if target_year and item_year_str.isdigit():
-                            item_year = int(item_year_str)
-                            diff = abs(item_year - target_year)
-                            
-                            if diff == 0:
+                        if similarity >= 0.4:
+                            if target_year and item_year_str.isdigit():
+                                item_year = int(item_year_str)
+                                diff = abs(item_year - target_year)
+                                if diff <= 2 and similarity > highest_similarity:
+                                    highest_similarity = similarity
+                                    best_match_id = str(item.get("id", ""))
+                            elif not target_year and similarity > highest_similarity:
+                                highest_similarity = similarity
+                                best_match_id = str(item.get("id", ""))
+                    
+                    if not best_match_id and results:
+                        for item in results:
+                            item_title = item.get("title") or item.get("name") or ""
+                            if is_title_similar(clean_t, item_title, threshold=0.4):
                                 best_match_id = str(item.get("id", ""))
                                 break
-                            elif diff <= 2 and diff < smallest_year_diff:
-                                smallest_year_diff = diff
-                                best_match_id = str(item.get("id", ""))
-                        elif not target_year:
-                            best_match_id = str(item.get("id", ""))
-                            break
                     
                     if best_match_id:
                         print(f"[TMDB] Found valid match for '{clean_t}' -> ID: {best_match_id}")
                         TMDB_CACHE[cache_key] = best_match_id
                         return best_match_id
-                                        
+                    
     except Exception as e:
         print(f"[TMDB] Error fetching ID: {e}")
         pass
         
-    print(f"[TMDB] No valid TMDB match for local/unknown title: '{clean_t}'")
+    print(f"[TMDB] No valid TMDB match for: '{clean_t}'")
     TMDB_CACHE[cache_key] = ""
     return ""
 
