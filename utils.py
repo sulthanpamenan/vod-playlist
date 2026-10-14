@@ -60,17 +60,6 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
     try:
-        if year and str(year).isdigit():
-            params = {"api_key": tmdb_api_key, "query": clean_t, "primary_release_year": year}
-            res = requests.get(url, params=params, timeout=5)
-            if res.status_code == 200:
-                results = res.json().get("results", [])
-                if results:
-                    tmdb_id = str(results[0].get("id", ""))
-                    TMDB_CACHE[cache_key] = tmdb_id
-                    print(f"[TMDB] Found with year filter for '{clean_t} ({year})' -> ID: {tmdb_id}")
-                    return tmdb_id
-
         params = {"api_key": tmdb_api_key, "query": clean_t}
         res = requests.get(url, params=params, timeout=5)
         if res.status_code == 200:
@@ -81,10 +70,10 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                 if target_year:
                     for item in results:
                         date_str = item.get("release_date") or item.get("first_air_date") or ""
-                        if date_str.startswith(str(target_year)) or date_str.startswith(str(target_year - 1)) or date_str.startswith(str(target_year + 1)):
+                        if date_str.startswith(str(target_year)):
                             tmdb_id = str(item.get("id", ""))
                             TMDB_CACHE[cache_key] = tmdb_id
-                            print(f"[TMDB] Found with year tolerance for '{clean_t}' -> ID: {tmdb_id}")
+                            print(f"[TMDB] Found exact year match for '{clean_t} ({year})' -> ID: {tmdb_id}")
                             return tmdb_id
 
                 tmdb_id = str(results[0].get("id", ""))
