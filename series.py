@@ -363,7 +363,7 @@ def main():
                     if result and isinstance(result, list):
                         for res_item in result:
                             if isinstance(res_item, dict) and "id" in res_item:
-                                item_key = f"fls_{res_item['id']}"
+                                item_key = f"fls_{res_item['id']}_{abs(hash(res_item['stream']))}"
                                 if item_key not in unique_episodes:
                                     unique_episodes[item_key] = res_item
                                     fls_count += 1
