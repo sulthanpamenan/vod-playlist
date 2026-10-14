@@ -41,7 +41,7 @@ def clean_episode_title(ep_title, parent_title):
     cleaned_ep = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', cleaned_ep, flags=re.IGNORECASE)
     return cleaned_ep.strip() if cleaned_ep.strip() else ep_title.strip()
 
-def is_title_similar(a, b, threshold=0.6):
+def is_title_similar(a, b, threshold=0.4):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
 
 def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
@@ -74,7 +74,7 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                         date_str = item.get("release_date") or item.get("first_air_date") or ""
                         item_year_str = date_str[:4]
                         
-                        if not is_title_similar(clean_t, item_title, threshold=0.5):
+                        if not is_title_similar(clean_t, item_title, threshold=0.4):
                             continue
                         
                         if target_year and item_year_str.isdigit():
