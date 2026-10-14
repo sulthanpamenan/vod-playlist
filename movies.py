@@ -309,7 +309,7 @@ def main():
             for future in as_completed(futures):
                 res = future.result()
                 if res:
-                    item_key = f"fls_m_{res['id']}"
+                    item_key = f"fls_m_{res['id']}_{abs(hash(res['stream']))}"
                     if item_key not in unique_movies:
                         unique_movies[item_key] = res
                         fls_movie_count += 1
