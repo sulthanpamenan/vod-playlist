@@ -49,11 +49,11 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
     
     cache_key = f"{clean_t}_{year}" if year else clean_t
     
+    # Abaikan cache jika nilainya kosong ("")
     if cache_key in TMDB_CACHE and TMDB_CACHE[cache_key] != "":
         return TMDB_CACHE[cache_key]
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
-    
     queries_to_try = []
     if year and str(year).isdigit():
         queries_to_try.append(f"{clean_t} y:{year}")
@@ -94,16 +94,20 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                             break
                     
                     if best_match_id:
+                        print(f"[TMDB] Found match for '{clean_t} ({year})' -> ID: {best_match_id}")
                         TMDB_CACHE[cache_key] = best_match_id
                         return best_match_id
                     
                     fallback_id = str(results[0].get("id", ""))
+                    print(f"[TMDB] Fallback match for '{clean_t}' -> ID: {fallback_id}")
                     TMDB_CACHE[cache_key] = fallback_id
                     return fallback_id
                     
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] Error fetching ID: {e}")
         pass
         
+    print(f"[TMDB] No results found for '{clean_t} ({year})'")
     TMDB_CACHE[cache_key] = ""
     return ""
 
