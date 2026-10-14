@@ -59,55 +59,45 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
         return TMDB_CACHE[clean_t]
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
-    queries_to_try = [clean_t]
-
     try:
-        for q in queries_to_try:
-            params = {"api_key": tmdb_api_key, "query": q}
+        if year and str(year).isdigit():
+            params = {"api_key": tmdb_api_key, "query": f"{clean_t} y:{year}"}
             res = requests.get(url, params=params, timeout=5)
             if res.status_code == 200:
                 results = res.json().get("results", [])
                 if results:
-                    target_year = int(year) if (year and str(year).isdigit()) else None
-                    best_match_id = None
-                    highest_similarity = 0.0
-                    
+                    tmdb_id = str(results[0].get("id", ""))
+                    TMDB_CACHE[cache_key] = tmdb_id
+                    print(f"[TMDB] Found with year filter for '{clean_t} ({year})' -> ID: {tmdb_id}")
+                    return tmdb_id
+
+        params = {"api_key": tmdb_api_key, "query": clean_t}
+        res = requests.get(url, params=params, timeout=5)
+        if res.status_code == 200:
+            results = res.json().get("results", [])
+            if results:
+                target_year = int(year) if (year and str(year).isdigit()) else None
+                
+                if target_year:
                     for item in results:
-                        item_title = item.get("title") or item.get("name") or ""
                         date_str = item.get("release_date") or item.get("first_air_date") or ""
-                        item_year_str = date_str[:4]
-                        
-                        similarity = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
-                        
-                        if similarity >= 0.4:
-                            if target_year and item_year_str.isdigit():
-                                item_year = int(item_year_str)
-                                diff = abs(item_year - target_year)
-                                if diff <= 2 and similarity > highest_similarity:
-                                    highest_similarity = similarity
-                                    best_match_id = str(item.get("id", ""))
-                            elif not target_year and similarity > highest_similarity:
-                                highest_similarity = similarity
-                                best_match_id = str(item.get("id", ""))
-                    
-                    if not best_match_id and results:
-                        for item in results:
-                            item_title = item.get("title") or item.get("name") or ""
-                            if is_title_similar(clean_t, item_title, threshold=0.4):
-                                best_match_id = str(item.get("id", ""))
-                                break
-                    
-                    if best_match_id:
-                        print(f"[TMDB] Found valid match for '{clean_t}' -> ID: {best_match_id}")
-                        TMDB_CACHE[cache_key] = best_match_id
-                        return best_match_id
-                    
+                        if date_str.startswith(str(target_year)) or date_str.startswith(str(target_year - 1)) or date_str.startswith(str(target_year + 1)):
+                            tmdb_id = str(item.get("id", ""))
+                            TMDB_CACHE[cache_key] = tmdb_id
+                            print(f"[TMDB] Found with year tolerance for '{clean_t}' -> ID: {tmdb_id}")
+                            return tmdb_id
+
+                tmdb_id = str(results[0].get("id", ""))
+                TMDB_CACHE[cache_key] = tmdb_id
+                print(f"[TMDB] Fallback match for '{clean_t}' -> ID: {tmdb_id}")
+                return tmdb_id
+                
     except Exception as e:
         print(f"[TMDB] Error fetching ID: {e}")
         pass
         
-    print(f"[TMDB] No valid TMDB match for: '{clean_t}'")
     TMDB_CACHE[cache_key] = ""
+    print(f"[TMDB] No results found for '{clean_t}'")
     return ""
 
 def format_stream_url(raw_url, content_id, user_id_target):
