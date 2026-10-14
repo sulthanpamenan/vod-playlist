@@ -80,7 +80,14 @@ def process_dailymotion_item(item):
         streams = SL_SESSION.streams(f"https://www.dailymotion.com/video/{item['id']}")
         if "best" in streams:
             url = streams['best'].url
-            tmdb_id = fetch_tmdb_id(item["title"], TMDB_API_KEY, "movie")
+            
+            title_raw = item["title"]
+            extracted_year = None
+            match_year = re.search(r'\((\d{4})\)', title_raw)
+            if match_year:
+                extracted_year = match_year.group(1)
+            
+            tmdb_id = fetch_tmdb_id(title_raw, TMDB_API_KEY, "movie", extracted_year)
             meta = f'#EXTINF:-1 vod="1" type="movie" content-type="movie" tvg-tmdb="{tmdb_id}" tvg-logo="{item["logo"]}" group-title="{item.get("genres", "Comedy")}",{item["title"]}'
             return f"{meta}\n{url}"
     except Exception as e:
