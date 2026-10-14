@@ -48,7 +48,7 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
     if not tmdb_api_key:
         return ""
     
-    extracted_year = year
+    extracted_year = str(year) if year else None
     match_year = re.search(r'\((\d{4})\)', title)
     if match_year and not extracted_year:
         extracted_year = match_year.group(1)
@@ -66,37 +66,40 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
     try:
-        year_param = "first_air_date_year" if media_type == "tv" else "primary_release_year"
-        if extracted_year and str(extracted_year).isdigit():
-            params = {"api_key": tmdb_api_key, "query": clean_t, year_param: extracted_year}
-            res = requests.get(url, params=params, timeout=5)
-            if res.status_code == 200:
-                results = res.json().get("results", [])
-                if results:
-                    tmdb_id = str(results[0].get("id", ""))
-                    TMDB_CACHE[cache_key] = tmdb_id
-                    print(f"[TMDB] Found with strict year filter for '{clean_t} ({extracted_year})' -> ID: {tmdb_id}")
-                    return tmdb_id
-
         params = {"api_key": tmdb_api_key, "query": clean_t}
         res = requests.get(url, params=params, timeout=5)
+        
         if res.status_code == 200:
             results = res.json().get("results", [])
             if results:
-                target_year = int(extracted_year) if (extracted_year and str(extracted_year).isdigit()) else None
+                best_match_id = ""
+                highest_score = 0.0
                 
-                if target_year:
-                    for item in results:
-                        date_str = item.get("release_date") or item.get("first_air_date") or ""
-                        if date_str.startswith(str(target_year)):
-                            tmdb_id = str(item.get("id", ""))
-                            TMDB_CACHE[cache_key] = tmdb_id
-                            print(f"[TMDB] Found with year matching for '{clean_t}' -> ID: {tmdb_id}")
-                            return tmdb_id
+                for item in results:
+                    item_title = item.get("title") or item.get("name") or ""
+                    date_str = item.get("release_date") or item.get("first_air_date") or ""
+                    item_year = date_str.split("-")[0] if date_str else ""
+                    
+                    score = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
+                    
+                    if extracted_year and item_year:
+                        if item_year == extracted_year:
+                            score += 0.3
+                        elif abs(int(item_year) - int(extracted_year)) <= 2:
+                            score += 0.15
+
+                    if score > highest_score:
+                        highest_score = score
+                        best_match_id = str(item.get("id", ""))
+
+                if best_match_id and highest_score >= 0.5:
+                    TMDB_CACHE[cache_key] = best_match_id
+                    print(f"[TMDB] Matched '{clean_t}' (Score: {highest_score:.2f}) -> ID: {best_match_id}")
+                    return best_match_id
 
                 tmdb_id = str(results[0].get("id", ""))
                 TMDB_CACHE[cache_key] = tmdb_id
-                print(f"[TMDB] Fallback match for '{clean_t}' -> ID: {tmdb_id}")
+                print(f"[TMDB] Fallback top result for '{clean_t}' -> ID: {tmdb_id}")
                 return tmdb_id
                 
     except Exception as e:
