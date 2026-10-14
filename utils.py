@@ -61,7 +61,7 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
     url = f"https://api.themoviedb.org/3/search/{media_type}"
     try:
         if year and str(year).isdigit():
-            params = {"api_key": tmdb_api_key, "query": f"{clean_t} y:{year}"}
+            params = {"api_key": tmdb_api_key, "query": clean_t, "primary_release_year": year}
             res = requests.get(url, params=params, timeout=5)
             if res.status_code == 200:
                 results = res.json().get("results", [])
