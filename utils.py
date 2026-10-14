@@ -47,11 +47,17 @@ def is_title_similar(a, b, threshold=0.4):
 def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
     if not tmdb_api_key:
         return ""
+    
+    extracted_year = year
+    match_year = re.search(r'\((\d{4})\)', title)
+    if match_year and not extracted_year:
+        extracted_year = match_year.group(1)
+
     clean_t = clean_title(title)
     if not clean_t:
         return ""
     
-    cache_key = f"{clean_t}_{year}" if year else clean_t
+    cache_key = f"{clean_t}_{extracted_year}" if extracted_year else clean_t
     if cache_key in TMDB_CACHE and TMDB_CACHE[cache_key] != "":
         return TMDB_CACHE[cache_key]
         
@@ -60,15 +66,16 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
     try:
-        if year and str(year).isdigit():
-            params = {"api_key": tmdb_api_key, "query": clean_t, "primary_release_year": year}
+        year_param = "first_air_date_year" if media_type == "tv" else "primary_release_year"
+        if extracted_year and str(extracted_year).isdigit():
+            params = {"api_key": tmdb_api_key, "query": clean_t, year_param: extracted_year}
             res = requests.get(url, params=params, timeout=5)
             if res.status_code == 200:
                 results = res.json().get("results", [])
                 if results:
                     tmdb_id = str(results[0].get("id", ""))
                     TMDB_CACHE[cache_key] = tmdb_id
-                    print(f"[TMDB] Found with year filter for '{clean_t} ({year})' -> ID: {tmdb_id}")
+                    print(f"[TMDB] Found with strict year filter for '{clean_t} ({extracted_year})' -> ID: {tmdb_id}")
                     return tmdb_id
 
         params = {"api_key": tmdb_api_key, "query": clean_t}
@@ -76,15 +83,15 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
         if res.status_code == 200:
             results = res.json().get("results", [])
             if results:
-                target_year = int(year) if (year and str(year).isdigit()) else None
+                target_year = int(extracted_year) if (extracted_year and str(extracted_year).isdigit()) else None
                 
                 if target_year:
                     for item in results:
                         date_str = item.get("release_date") or item.get("first_air_date") or ""
-                        if date_str.startswith(str(target_year)) or date_str.startswith(str(target_year - 1)) or date_str.startswith(str(target_year + 1)):
+                        if date_str.startswith(str(target_year)):
                             tmdb_id = str(item.get("id", ""))
                             TMDB_CACHE[cache_key] = tmdb_id
-                            print(f"[TMDB] Found with year tolerance for '{clean_t}' -> ID: {tmdb_id}")
+                            print(f"[TMDB] Found with year matching for '{clean_t}' -> ID: {tmdb_id}")
                             return tmdb_id
 
                 tmdb_id = str(results[0].get("id", ""))
