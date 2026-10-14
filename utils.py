@@ -45,28 +45,34 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
         return ""
     clean_t = clean_title(title)
     if not clean_t:
-        return ""
-        
+        release_year = ""
+    
     cache_key = f"{clean_t}_{year}" if year else clean_t
     if cache_key in TMDB_CACHE:
         return TMDB_CACHE[cache_key]
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
     try:
+        params = {"api_key": tmdb_api_key, "query": clean_t}
         if year and year.isdigit():
-            params = {"api_key": tmdb_api_key, "query": f"{clean_t} y:{year}"}
-            res = requests.get(url, params=params, timeout=5)
-            if res.status_code == 200 and res.json().get("results"):
-                tmdb_id = str(res.json().get("results")[0].get("id", ""))
+            params["year"] = year
+            
+        res = requests.get(url, params=params, timeout=5)
+        if res.status_code == 200:
+            results = res.json().get("results", [])
+            
+            if year and year.isdigit() and results:
+                for item in results:
+                    date_str = item.get("release_date") or item.get("first_air_date") or ""
+                    if date_str.startswith(str(year)):
+                        tmdb_id = str(item.get("id", ""))
+                        TMDB_CACHE[cache_key] = tmdb_id
+                        return tmdb_id
+            
+            if results:
+                tmdb_id = str(results[0].get("id", ""))
                 TMDB_CACHE[cache_key] = tmdb_id
                 return tmdb_id
-
-        params = {"api_key": tmdb_api_key, "query": clean_t}
-        res = requests.get(url, params=params, timeout=5)
-        if res.status_code == 200 and res.json().get("results"):
-            tmdb_id = str(res.json().get("results")[0].get("id", ""))
-            TMDB_CACHE[cache_key] = tmdb_id
-            return tmdb_id
     except Exception:
         pass
         
