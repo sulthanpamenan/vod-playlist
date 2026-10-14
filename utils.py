@@ -2,6 +2,7 @@ import json
 import os
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from difflib import SequenceMatcher
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -40,6 +41,9 @@ def clean_episode_title(ep_title, parent_title):
     cleaned_ep = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', cleaned_ep, flags=re.IGNORECASE)
     return cleaned_ep.strip() if cleaned_ep.strip() else ep_title.strip()
 
+def is_title_similar(a, b, threshold=0.6):
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
+
 def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
     if not tmdb_api_key:
         return ""
@@ -52,13 +56,11 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
         return TMDB_CACHE[cache_key]
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
-    
     queries_to_try = [clean_t]
 
     try:
         for q in queries_to_try:
             params = {"api_key": tmdb_api_key, "query": q}
-                
             res = requests.get(url, params=params, timeout=5)
             if res.status_code == 200:
                 results = res.json().get("results", [])
@@ -68,8 +70,12 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                     smallest_year_diff = 999
                     
                     for item in results:
+                        item_title = item.get("title") or item.get("name") or ""
                         date_str = item.get("release_date") or item.get("first_air_date") or ""
                         item_year_str = date_str[:4]
+                        
+                        if not is_title_similar(clean_t, item_title, threshold=0.5):
+                            continue
                         
                         if target_year and item_year_str.isdigit():
                             item_year = int(item_year_str)
@@ -86,20 +92,15 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                             break
                     
                     if best_match_id:
-                        print(f"[TMDB] Found match for '{clean_t} ({year})' -> ID: {best_match_id}")
+                        print(f"[TMDB] Found valid match for '{clean_t}' -> ID: {best_match_id}")
                         TMDB_CACHE[cache_key] = best_match_id
                         return best_match_id
-                    
-                    fallback_id = str(results[0].get("id", ""))
-                    print(f"[TMDB] Fallback match for '{clean_t}' -> ID: {fallback_id}")
-                    TMDB_CACHE[cache_key] = fallback_id
-                    return fallback_id
-                    
+                                        
     except Exception as e:
         print(f"[TMDB] Error fetching ID: {e}")
         pass
         
-    print(f"[TMDB] No results found for '{clean_t} ({year})'")
+    print(f"[TMDB] No valid TMDB match for local/unknown title: '{clean_t}'")
     TMDB_CACHE[cache_key] = ""
     return ""
 
