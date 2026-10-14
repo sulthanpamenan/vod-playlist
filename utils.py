@@ -2,7 +2,6 @@ import json
 import os
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-from difflib import SequenceMatcher
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -41,52 +40,37 @@ def clean_episode_title(ep_title, parent_title):
     cleaned_ep = re.sub(r'\s*\|\s*(Not Rated|Rated.*$)', '', cleaned_ep, flags=re.IGNORECASE)
     return cleaned_ep.strip() if cleaned_ep.strip() else ep_title.strip()
 
-def is_title_similar(a, b, threshold=0.4):
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
-
 def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
     if not tmdb_api_key:
         return ""
     clean_t = clean_title(title)
     if not clean_t:
         return ""
-    
-    cache_key = f"{clean_t}_{year}" if year else clean_t
-    if cache_key in TMDB_CACHE and TMDB_CACHE[cache_key] != "":
-        return TMDB_CACHE[cache_key]
         
-    if clean_t in TMDB_CACHE and TMDB_CACHE[clean_t] != "":
-        return TMDB_CACHE[clean_t]
+    cache_key = f"{clean_t}_{year}" if year else clean_t
+    if cache_key in TMDB_CACHE:
+        return TMDB_CACHE[cache_key]
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
     try:
+        if year and year.isdigit():
+            params = {"api_key": tmdb_api_key, "query": clean_t, "primary_release_year": year}
+            res = requests.get(url, params=params, timeout=5)
+            if res.status_code == 200 and res.json().get("results"):
+                tmdb_id = str(res.json().get("results")[0].get("id", ""))
+                TMDB_CACHE[cache_key] = tmdb_id
+                return tmdb_id
+
         params = {"api_key": tmdb_api_key, "query": clean_t}
         res = requests.get(url, params=params, timeout=5)
-        if res.status_code == 200:
-            results = res.json().get("results", [])
-            if results:
-                target_year = int(year) if (year and str(year).isdigit()) else None
-                
-                if target_year:
-                    for item in results:
-                        date_str = item.get("release_date") or item.get("first_air_date") or ""
-                        if date_str.startswith(str(target_year)):
-                            tmdb_id = str(item.get("id", ""))
-                            TMDB_CACHE[cache_key] = tmdb_id
-                            print(f"[TMDB] Found exact year match for '{clean_t} ({year})' -> ID: {tmdb_id}")
-                            return tmdb_id
-
-                tmdb_id = str(results[0].get("id", ""))
-                TMDB_CACHE[cache_key] = tmdb_id
-                print(f"[TMDB] Fallback match for '{clean_t}' -> ID: {tmdb_id}")
-                return tmdb_id
-                
-    except Exception as e:
-        print(f"[TMDB] Error fetching ID: {e}")
+        if res.status_code == 200 and res.json().get("results"):
+            tmdb_id = str(res.json().get("results")[0].get("id", ""))
+            TMDB_CACHE[cache_key] = tmdb_id
+            return tmdb_id
+    except Exception:
         pass
         
     TMDB_CACHE[cache_key] = ""
-    print(f"[TMDB] No results found for '{clean_t}'")
     return ""
 
 def format_stream_url(raw_url, content_id, user_id_target):
