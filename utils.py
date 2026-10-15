@@ -75,6 +75,8 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                 best_match_id = ""
                 highest_score = 0.0
                 
+                is_short_title = len(clean_t.strip()) <= 10
+                
                 for item in results:
                     item_title = item.get("title") or item.get("name") or ""
                     date_str = item.get("release_date") or item.get("first_air_date") or ""
@@ -83,12 +85,10 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                     score = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
                     
                     if extracted_year and item_year:
-                        diff_year = int(item_year) - int(extracted_year)
-                        abs_diff = abs(diff_year)
-                        
-                        if abs_diff == 0:
+                        diff_year = abs(int(item_year) - int(extracted_year))
+                        if diff_year == 0:
                             score += 0.4
-                        elif abs_diff <= 2:
+                        elif diff_year <= 2:
                             score += 0.2
                         else:
                             continue
@@ -96,17 +96,28 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                     clean_t_lower = clean_t.lower()
                     item_title_lower = item_title.lower()
                     
-                    if clean_t_lower == item_title_lower:
-                        score += 0.3
-                    elif clean_t_lower in item_title_lower:
-                        if not item_title_lower.startswith(clean_t_lower):
-                            score -= 0.25
+                    if is_short_title:
+                        if clean_t_lower != item_title_lower:
+                            words_in_item = item_title_lower.split()
+                            if clean_t_lower not in words_in_item:
+                                continue
+                            else:
+                                score -= 0.1
+                        else:
+                            score += 0.5
+                    else:
+                        if clean_t_lower == item_title_lower:
+                            score += 0.3
+                        elif clean_t_lower in item_title_lower:
+                            if not item_title_lower.startswith(clean_t_lower):
+                                score -= 0.25
 
                     if score > highest_score:
                         highest_score = score
                         best_match_id = str(item.get("id", ""))
 
-                if best_match_id and highest_score >= 0.55:
+                min_threshold = 0.7 if is_short_title else 0.55
+                if best_match_id and highest_score >= min_threshold:
                     TMDB_CACHE[cache_key] = best_match_id
                     print(f"[TMDB] Matched '{clean_t}' (Score: {highest_score:.2f}) -> ID: {best_match_id}")
                     return best_match_id
