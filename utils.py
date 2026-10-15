@@ -83,31 +83,31 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                     score = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
                     
                     if extracted_year and item_year:
-                        if item_year == extracted_year:
-                            score += 0.3
-                        elif abs(int(item_year) - int(extracted_year)) <= 2:
+                        diff_year = abs(int(item_year) - int(extracted_year))
+                        if diff_year == 0:
+                            score += 0.35
+                        elif diff_year <= 2:
                             score += 0.15
+                        else:
+                            score -= 0.6
 
                     if score > highest_score:
                         highest_score = score
                         best_match_id = str(item.get("id", ""))
 
-                if best_match_id and highest_score >= 0.5:
+                if best_match_id and highest_score >= 0.55:
                     TMDB_CACHE[cache_key] = best_match_id
                     print(f"[TMDB] Matched '{clean_t}' (Score: {highest_score:.2f}) -> ID: {best_match_id}")
                     return best_match_id
-
-                tmdb_id = str(results[0].get("id", ""))
-                TMDB_CACHE[cache_key] = tmdb_id
-                print(f"[TMDB] Fallback top result for '{clean_t}' -> ID: {tmdb_id}")
-                return tmdb_id
+                else:
+                    print(f"[TMDB] Ignored low score or mismatched year for '{clean_t}' (Highest score: {highest_score:.2f})")
                 
     except Exception as e:
         print(f"[TMDB] Error fetching ID: {e}")
         pass
         
     TMDB_CACHE[cache_key] = ""
-    print(f"[TMDB] No results found for '{clean_t}'")
+    print(f"[TMDB] No valid results found for '{clean_t}'")
     return ""
 
 def format_stream_url(raw_url, content_id, user_id_target):
