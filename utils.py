@@ -83,10 +83,13 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                     score = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
                     
                     if extracted_year and item_year:
-                        if item_year == extracted_year:
-                            score += 0.3
-                        elif abs(int(item_year) - int(extracted_year)) <= 2:
+                        diff_year = abs(int(item_year) - int(extracted_year))
+                        if diff_year == 0:
+                            score += 0.35
+                        elif diff_year <= 2:
                             score += 0.15
+                        else:
+                            score -= 0.6
 
                     clean_t_lower = clean_t.lower()
                     item_title_lower = item_title.lower()
