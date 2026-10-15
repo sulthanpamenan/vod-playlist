@@ -48,19 +48,20 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
     if not tmdb_api_key:
         return ""
     
-    clean_t = clean_title(title)
-    if not clean_t:
-        return ""
-    
     extracted_year = str(year) if year else None
     match_year = re.search(r'\((\d{4})\)', title)
     if match_year and not extracted_year:
         extracted_year = match_year.group(1)
 
+    clean_t = clean_title(title)
+    if not clean_t:
+        return ""
+    
     cache_key = f"{clean_t}_{extracted_year}" if extracted_year else clean_t
-    if cache_key in TMDB_CACHE:
+    if cache_key in TMDB_CACHE and TMDB_CACHE[cache_key] != "":
         return TMDB_CACHE[cache_key]
-    if clean_t in TMDB_CACHE:
+        
+    if clean_t in TMDB_CACHE and TMDB_CACHE[clean_t] != "":
         return TMDB_CACHE[clean_t]
 
     url = f"https://api.themoviedb.org/3/search/{media_type}"
@@ -79,36 +80,34 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                     date_str = item.get("release_date") or item.get("first_air_date") or ""
                     item_year = date_str.split("-")[0] if date_str else ""
                     
-                    base_score = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
-                    if base_score < 0.5:
-                        continue
-                        
-                    score = base_score
+                    score = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
                     
                     if extracted_year and item_year:
-                        diff_year = abs(int(item_year) - int(extracted_year))
-                        if diff_year == 0:
-                            score += 0.35
-                        elif diff_year <= 2:
+                        if item_year == extracted_year:
+                            score += 0.3
+                        elif abs(int(item_year) - int(extracted_year)) <= 2:
                             score += 0.15
-                        else:
-                            score -= 0.4
-                    
+
                     if score > highest_score:
                         highest_score = score
                         best_match_id = str(item.get("id", ""))
 
-                if best_match_id and highest_score >= 0.55:
+                if best_match_id and highest_score >= 0.5:
                     TMDB_CACHE[cache_key] = best_match_id
                     print(f"[TMDB] Matched '{clean_t}' (Score: {highest_score:.2f}) -> ID: {best_match_id}")
                     return best_match_id
+
+                tmdb_id = str(results[0].get("id", ""))
+                TMDB_CACHE[cache_key] = tmdb_id
+                print(f"[TMDB] Fallback top result for '{clean_t}' -> ID: {tmdb_id}")
+                return tmdb_id
                 
     except Exception as e:
         print(f"[TMDB] Error fetching ID: {e}")
         pass
         
     TMDB_CACHE[cache_key] = ""
-    print(f"[TMDB] No valid results for '{clean_t}'")
+    print(f"[TMDB] No results found for '{clean_t}'")
     return ""
 
 def format_stream_url(raw_url, content_id, user_id_target):
