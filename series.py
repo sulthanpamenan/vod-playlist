@@ -58,6 +58,7 @@ def process_fls_show(session, access_token, show):
     show_name = show.get("show_name") or show.get("title") or "Unknown"
     vanity_url = show.get("vanity_url") or show_name
     logo = show.get("logo") or show.get("thumbnail") or ""
+    
     if logo:
         logo = quote(logo, safe=":/%")
 
@@ -90,6 +91,9 @@ def process_fls_show(session, access_token, show):
         genres_list = [cat.get("category_name") for cat in categories if isinstance(cat, dict) and cat.get("category_name")]
         genre = genres_list[0] if genres_list else clean_title(show_name)
         clean_show_name = clean_title(show_name)
+
+        show_year = str(details.get("year", ""))
+        tmdb_id = fetch_tmdb_id(show_name, TMDB_API_KEY, "tv", show_year)
 
         videos_data = details.get("videos", [])
         target_episodes = []
@@ -175,7 +179,7 @@ def process_fls_show(session, access_token, show):
                 "id": str(ep_id),
                 "title": clean_ep_title,
                 "serie_title": clean_show_name,
-                "tmdb_id": "",
+                "tmdb_id": tmdb_id,
                 "poster": logo,
                 "genre": genre,
                 "description": str(ep_desc).replace("\n", " ").strip(),
