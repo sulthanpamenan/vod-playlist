@@ -80,17 +80,14 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                     date_str = item.get("release_date") or item.get("first_air_date") or ""
                     item_year = date_str.split("-")[0] if date_str else ""
                     
-                    base_score = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
-                    score = base_score
+                    score = SequenceMatcher(None, clean_t.lower(), item_title.lower()).ratio()
                     
                     if extracted_year and item_year:
                         diff_year = abs(int(item_year) - int(extracted_year))
                         if diff_year == 0:
-                            score += 0.30
-                        elif diff_year == 1:
-                            score += 0.10
-                        elif diff_year == 2:
-                            score += 0.0
+                            score += 0.35
+                        elif diff_year <= 2:
+                            score += 0.15
                         else:
                             score -= 0.6
 
@@ -99,17 +96,17 @@ def fetch_tmdb_id(title, tmdb_api_key, media_type="movie", year=None):
                     if len(query_words) <= 2:
                         if not query_words.issubset(item_words):
                             score -= 0.3
-
+                    
                     if score > highest_score:
                         highest_score = score
                         best_match_id = str(item.get("id", ""))
 
-                if best_match_id and highest_score >= 0.60:
+                if best_match_id and highest_score >= 0.55:
                     TMDB_CACHE[cache_key] = best_match_id
                     print(f"[TMDB] Matched '{clean_t}' (Score: {highest_score:.2f}) -> ID: {best_match_id}")
                     return best_match_id
                 else:
-                    print(f"[TMDB] Ignored low score or mismatch for '{clean_t}' (Highest score: {highest_score:.2f})")
+                    print(f"[TMDB] Ignored low score or mismatched year for '{clean_t}' (Highest score: {highest_score:.2f})")
                 
     except Exception as e:
         print(f"[TMDB] Error fetching ID: {e}")
