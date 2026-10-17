@@ -23,7 +23,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ================= CONFIGURASI =================
 USER_ID_TARGET = "wnctpm5uf2j"
-TMDB_API_KEY = "f5b601ec011f9760c7fb6752670714cf"
+TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 HEADERS_SUFFIX = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36&Origin=https://www.dens.tv&Referer=https://www.dens.tv/"
 
 DAILYMOTION_ITEMS = [
